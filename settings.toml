@@ -1,0 +1,17 @@
+[path]
+model = "data/model.pt"
+datasets = [
+    "data/araucaria/dataset.json.gz",
+    "data/kialo/dataset.json.gz",
+    "data/pheme/dataset.json.gz",
+]
+
+[model]
+model = "bert-base-uncased"
+device = "cpu"
+batch_size = 128
+max_sequence_length = 75
+epochs = 2
+learning_rate = 0.00002
+
+[grpc]

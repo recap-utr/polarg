@@ -1,0 +1,35 @@
+version: "3"
+
+services:
+  train:
+    build:
+      context: .
+      args:
+        POETRY_VERSION: 1.1.12
+        PYTHON_VERSION: 3.9
+    ports:
+      - "5001:5001"
+    volumes:
+      - .:/app
+    command: python3.9 -m argument_nli.train
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # count: 2
+              device_ids:
+                - "7"
+              capabilities:
+                - "gpu"
+  deploy:
+    build:
+      context: .
+      args:
+        POETRY_VERSION: 1.1.12
+        PYTHON_VERSION: 3.9
+    ports:
+      - "5001:5001"
+    volumes:
+      - .:/app
+    command: python3.9 -m argument_nli.deploy
