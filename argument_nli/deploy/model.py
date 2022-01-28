@@ -17,20 +17,20 @@ from transformers.tokenization_utils_base import BatchEncoding
 class EntailmentClassifier:
     def __init__(self):
         self.tokenizer: BertTokenizer = BertTokenizer.from_pretrained(
-            config["model"]["pretrained"]
+            config.model.pretrained
         )
 
         self.model: torch.nn.Module = BertForSequenceClassification.from_pretrained(
-            config["model"]["pretrained"], num_labels=3
+            config.model.pretrained, num_labels=3
         )
         self.model.load_state_dict(
             torch.load(
-                config["path"]["model"],
-                map_location=torch.device(config["model"]["device"]),
+                config.path.model,
+                map_location=torch.device(config.model.device),
             )
         )
         self.model.eval()
-        self.model.to(config["model"]["device"])
+        self.model.to(config.model.device)
 
         self.label_dict = {
             0: Prediction.PREDICTION_NEUTRAL,
@@ -44,7 +44,7 @@ class EntailmentClassifier:
             premise,
             claim,
             padding=False,  # TODO: default off
-            max_length=config["model"]["max_sequence_length"],
+            max_length=config.model.max_sequence_length,
             truncation=True,  # TODO: default off
             add_special_tokens=True,
             return_token_type_ids=True,
@@ -52,7 +52,7 @@ class EntailmentClassifier:
             return_tensors="pt",
         )
         model_params = {
-            key: value.to(config["model"]["device"]) for key, value in encoding.items()
+            key: value.to(config.model.device) for key, value in encoding.items()
         }
 
         with torch.no_grad():

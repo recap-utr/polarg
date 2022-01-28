@@ -13,7 +13,7 @@ from transformers.tokenization_utils_base import BatchEncoding
 class EntailmentDataset(Dataset):
     def __init__(self, annotations: t.Sequence[Annotation]):
         self.tokenizer: BertTokenizer = BertTokenizer.from_pretrained(
-            config["model"]["pretrained"]
+            config.model.pretrained
         )
         self.label_dict = {
             EntailmentLabel.NEUTRAL: 0,
@@ -35,7 +35,7 @@ class EntailmentDataset(Dataset):
             ann.premise,
             ann.claim,
             padding="max_length",  # TODO: default off
-            max_length=config["model"]["max_sequence_length"],
+            max_length=config.model.max_sequence_length,
             truncation=True,  # TODO: default off
             add_special_tokens=True,
             return_token_type_ids=True,
@@ -56,4 +56,4 @@ class EntailmentDataset(Dataset):
         # )
 
     def get_data_loader(self):
-        return DataLoader(self, shuffle=True, batch_size=config["model"]["batch_size"])
+        return DataLoader(self, shuffle=True, batch_size=config.model.batch_size)

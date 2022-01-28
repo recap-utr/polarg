@@ -56,10 +56,10 @@ def train_model(
             for batch in batches:
                 optimizer.zero_grad()
                 model_params = {
-                    key: value.to(config["model"]["device"])
+                    key: value.to(config.model.device)
                     for key, value in batch[0].items()
                 }
-                labels = batch[1].to(config["model"]["device"])
+                labels = batch[1].to(config.model.device)
                 output: SequenceClassifierOutput = model(**model_params, labels=labels)
 
                 if output.loss:
@@ -77,9 +77,10 @@ def train_model(
 
     return acc, loss
 
+
 dataset = AnnotationDataset()
 
-for file in config["path"]["datasets"]:
+for file in config.path.datasets:
     with gzip.open(file, "rt", encoding="utf-8") as f:
         dataset.extend(AnnotationDataset.from_dict(json.load(f)))
 
@@ -87,19 +88,19 @@ train_data = EntailmentDataset(dataset.train).get_data_loader()
 test_data = EntailmentDataset(dataset.test).get_data_loader()
 
 model: torch.nn.Module = BertForSequenceClassification.from_pretrained(
-    config["model"]["pretrained"], num_labels=3
+    config.model.pretrained, num_labels=3
 )
-model.to(config["model"]["device"])
+model.to(config.model.device)
 
 optimizer = t.cast(
     torch.optim.AdamW,
-    AdamW(model.parameters(), lr=config["model"]["learning_rate"], correct_bias=False),
+    AdamW(model.parameters(), lr=config.model.learning_rate, correct_bias=False),
 )
 
-for epoch in range(config["model"]["epochs"]):
+for epoch in range(config.model.epochs):
     typer.echo(f"Epoch {epoch+1}")
 
     train_acc, train_loss = train_model(model, train_data, optimizer, test=False)
     test_acc, test_loss = train_model(model, train_data, optimizer, test=True)
 
-torch.save(model.state_dict(), config["path"]["model"])
+torch.save(model.state_dict(), config.path.model)

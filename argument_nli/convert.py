@@ -11,10 +11,12 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import arguebuf
+import networkx as nx
 import pandas as pd
 import typer
 from dataclasses_json import DataClassJsonMixin
 from sklearn.model_selection import train_test_split
+from sklearn.utils import resample
 
 from argument_nli.config import config
 
@@ -45,7 +47,7 @@ arguebuf_label = {
 }
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class Annotation(DataClassJsonMixin):
     premise: str
     claim: str
@@ -62,47 +64,92 @@ class AnnotationDataset(DataClassJsonMixin):
         self.test.extend(other.test)
 
 
-def _pheme(files: t.Iterable[Path]) -> t.List[Annotation]:
+def _pheme(files: t.Collection[Path]) -> t.List[Annotation]:
     annotations = []
+    file: Path
 
-    for file in files:
-        root = ET.parse(file)
+    with typer.progressbar(files, show_pos=True) as batches:
+        for file in batches:
+            root = ET.parse(file)
 
-        for pair in root.findall(".//pair"):
-            premise = pair.findtext("t")
-            claim = pair.findtext("h")
-            label = pheme_label.get(pair.attrib["entailment"])
+            for pair in root.findall(".//pair"):
+                premise = pair.findtext("t")
+                claim = pair.findtext("h")
+                label = pheme_label.get(pair.attrib["entailment"])
 
-            if premise and claim and label:
-                annotations.append(Annotation(premise, claim, label))
+                if premise and claim and label:
+                    annotations.append(Annotation(premise, claim, label))
 
     return annotations
 
 
-def _argument_graph(files: t.Iterable[Path]) -> t.List[Annotation]:
+def _argument_graph(files: t.Collection[Path]) -> t.List[Annotation]:
     annotations = []
+    file: Path
 
-    for file in files:
-        graph = arguebuf.Graph.from_file(file)
+    with typer.progressbar(files, show_pos=True) as batches:
+        for file in batches:
+            graph = arguebuf.Graph.from_file(file)
+            non_neutral_annotations = []
 
-        for scheme in graph.scheme_nodes.values():
-            for premise, claim in itertools.product(
-                graph.incoming_atom_nodes(scheme), graph.outgoing_atom_nodes(scheme)
-            ):
-                if label := arguebuf_label.get(scheme.type):
-                    annotations.append(
-                        Annotation(premise.plain_text, claim.plain_text, label)
+            for scheme in graph.scheme_nodes.values():
+                for premise, claim in itertools.product(
+                    graph.incoming_nodes(scheme), graph.outgoing_nodes(scheme)
+                ):
+                    if (
+                        (label := arguebuf_label.get(scheme.type))
+                        and isinstance(premise, arguebuf.AtomNode)
+                        and isinstance(claim, arguebuf.AtomNode)
+                    ):
+                        non_neutral_annotations.append(
+                            Annotation(premise.plain_text, claim.plain_text, label)
+                        )
+
+            # To speed up the computation for neutral samples, we use networkx
+            nx_graph = graph.to_nx().to_undirected()
+            dist = dict(nx.all_pairs_shortest_path_length(nx_graph, cutoff=15))
+            atom_nodes = set(graph.atom_nodes.keys())
+
+            neutral_annotations = []
+
+            for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
+                if (
+                    node1 in atom_nodes
+                    and node2 in atom_nodes
+                    and (
+                        # distance in graph > 9 due to specified cutoff
+                        node2 not in dist[node1]
+                        or (
+                            # leaf nodes only need distance > 3
+                            # otherwise, small corpora like araucaria
+                            # would have no neutral samples
+                            len(graph.incoming_nodes(node1)) == 0
+                            and len(graph.incoming_nodes(node2)) == 0
+                            and dist[node1][node2] > 3
+                        )
+                    )
+                ):
+                    neutral_annotations.append(
+                        Annotation(
+                            graph.atom_nodes[node1].plain_text,
+                            graph.atom_nodes[node2].plain_text,
+                            EntailmentLabel.NEUTRAL,
+                        )
                     )
 
-        for premise, claim in itertools.product(
-            graph.atom_nodes.values(), graph.atom_nodes.values()
-        ):
-            if graph.node_distance(premise, claim, 9, directed=False) is None:
-                annotations.append(
-                    Annotation(
-                        premise.plain_text, claim.plain_text, EntailmentLabel.NEUTRAL
-                    )
+            if len(neutral_annotations) > len(non_neutral_annotations):
+                neutral_annotations = t.cast(
+                    t.List[Annotation],
+                    resample(
+                        neutral_annotations,
+                        replace=False,
+                        random_state=config.convert.random_state,
+                        n_samples=len(non_neutral_annotations),
+                    ),
                 )
+
+            annotations.extend(non_neutral_annotations)
+            annotations.extend(neutral_annotations)
 
     return annotations
 
@@ -112,12 +159,15 @@ def _convert(
     train_pattern: str,
     test_pattern: str,
     output: Path,
-    convert_func: t.Callable[[t.Iterable[Path]], t.List[Annotation]],
+    convert_func: t.Callable[[t.Collection[Path]], t.List[Annotation]],
 ):
     dataset = AnnotationDataset()
 
-    dataset.train.extend(convert_func(input.glob(train_pattern)))
-    dataset.test.extend(convert_func(input.glob(test_pattern)))
+    typer.echo("Converting training data")
+    dataset.train.extend(convert_func(list(input.glob(train_pattern))))
+
+    typer.echo("Converting testing data")
+    dataset.test.extend(convert_func(list(input.glob(test_pattern))))
 
     with gzip.open(output.with_suffix(".json.gz"), "wt", encoding="utf-8") as f:
         json.dump(dataset.to_dict(), f)
@@ -146,14 +196,16 @@ def split(
     test_output: Path,
     test_size: t.Optional[float] = None,
     train_size: t.Optional[float] = None,
-    random_state: int = 0,
 ):
     train_output.mkdir(exist_ok=True)
     test_output.mkdir(exist_ok=True)
 
     files = list(input.glob(pattern))
     train, test = train_test_split(
-        files, test_size=test_size, train_size=train_size, random_state=random_state
+        files,
+        test_size=test_size,
+        train_size=train_size,
+        random_state=config.convert.random_state,
     )
     file: Path
 

@@ -1,17 +1,20 @@
 [path]
 model = "data/model.pt"
 datasets = [
-    "data/araucaria/dataset.json.gz",
-    "data/kialo/dataset.json.gz",
-    "data/pheme/dataset.json.gz",
+    "data/araucaria.json.gz",
+    "data/kialo.json.gz",
+    "data/pheme.json.gz",
 ]
 
+[convert]
+random_state = 0
+
 [model]
-model = "bert-base-uncased"
+pretrained = "bert-base-uncased"
 device = "cpu"
-batch_size = 128
-max_sequence_length = 75
-epochs = 2
-learning_rate = 0.00002
+batch_size = 2048
+max_sequence_length = 512
+epochs = 6
+learning_rate = 0.0003
 
 [grpc]
