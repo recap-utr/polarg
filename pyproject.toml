@@ -15,8 +15,9 @@ typer = "^0.4.0"
 pandas = "^1.3.5"
 arg-services = "^0.1.21"
 dataclasses-json = "^0.5.6"
-arguebuf = "^0.2.3"
+arguebuf = "^0.2.5"
 scikit-learn = "^1.0.2"
+ordered-set = "^4.1.0"
 
 [tool.poetry.dev-dependencies]
 ipykernel = "^6.6.0"

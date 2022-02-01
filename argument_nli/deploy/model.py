@@ -23,9 +23,10 @@ class EntailmentClassifier:
         self.model: torch.nn.Module = BertForSequenceClassification.from_pretrained(
             config.model.pretrained, num_labels=3
         )
+        self.model = torch.nn.DataParallel(self.model)
         self.model.load_state_dict(
             torch.load(
-                config.path.model,
+                config.model.path,
                 map_location=torch.device(config.model.device),
             )
         )

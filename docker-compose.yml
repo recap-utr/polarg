@@ -7,6 +7,8 @@ services:
       args:
         POETRY_VERSION: 1.1.12
         PYTHON_VERSION: 3.9
+    tty: true
+    stdin_open: true
     ports:
       - "5001:5001"
     volumes:
@@ -18,16 +20,16 @@ services:
           devices:
             - driver: nvidia
               # count: 2
-              device_ids:
-                - "7"
-              capabilities:
-                - "gpu"
+              device_ids: ["4", "5", "6", "7"]
+              capabilities: ["gpu"]
   deploy:
     build:
       context: .
       args:
         POETRY_VERSION: 1.1.12
         PYTHON_VERSION: 3.9
+    tty: true
+    stdin_open: true
     ports:
       - "5001:5001"
     volumes:

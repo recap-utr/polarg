@@ -4,10 +4,9 @@ import typing as t
 from pathlib import Path
 from pprint import pprint
 
+import arguebuf
 import grpc
-import recap_argument_graph as ag
 from arg_services.entailment.v1 import entailment_pb2, entailment_pb2_grpc
-from recap_argument_graph import graph
 
 
 def get_prob(
@@ -20,18 +19,18 @@ def get_prob(
 
 
 input_path = Path(__file__).parent / Path("input/adaptation")
-retrieved_graphs: t.Dict[str, ag.Graph] = {}
-adapted_graphs: t.Dict[str, ag.Graph] = {}
+retrieved_graphs: t.Dict[str, arguebuf.Graph] = {}
+adapted_graphs: t.Dict[str, arguebuf.Graph] = {}
 
 for retrieved_file in input_path.rglob("retrieved.json"):
     graph_name = retrieved_file.parent
     adapted_file = graph_name / "adapted.json"
 
     if retrieved_file.exists() and adapted_file.exists():
-        retrieved_graphs[str(graph_name)] = ag.Graph.from_file(retrieved_file)
-        adapted_graphs[str(graph_name)] = ag.Graph.from_file(adapted_file)
+        retrieved_graphs[str(graph_name)] = arguebuf.Graph.from_file(retrieved_file)
+        adapted_graphs[str(graph_name)] = arguebuf.Graph.from_file(adapted_file)
 
-# graph: ag.Graph
+# graph: arguebuf.Graph
 
 # for graph in itertools.chain(retrieved_graphs.values(), adapted_graphs.values()):
 #     graph.strip_snodes()
@@ -53,8 +52,8 @@ for graph_name, retrieved_graph in retrieved_graphs.items():
             retrieved_graph.incoming_nodes[retrieved_snode],
         ):
             if (
-                retrieved_claim.category == ag.NodeCategory.I
-                and retrieved_premise.category == ag.NodeCategory.I
+                retrieved_claim.category == arguebuf.NodeCategory.I
+                and retrieved_premise.category == arguebuf.NodeCategory.I
                 # True
             ):
                 adapted_claim = adapted_graph.node_mappings[retrieved_claim.key]

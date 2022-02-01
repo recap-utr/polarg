@@ -2,20 +2,26 @@
 
 import gzip
 import json
+import pickle
 import typing as t
 from contextlib import nullcontext
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
+import transformers.utils.logging as transformers_logging
 import typer
 from argument_nli.config import config
-from argument_nli.convert import Annotation, AnnotationDataset
+from argument_nli.model import AnnotationDataset
 from argument_nli.train.model import EntailmentDataset
 from torch.utils.data import DataLoader, Dataset, TensorDataset
-from transformers import AdamW, BertForSequenceClassification
+from tqdm import tqdm
+from transformers import BertForSequenceClassification
 from transformers.modeling_outputs import SequenceClassifierOutput
+
+transformers_logging.set_verbosity_error()
 
 
 def multi_acc(y_pred: torch.Tensor, y_test: torch.Tensor) -> torch.Tensor:
@@ -43,6 +49,7 @@ def train_model(
     accuracies = []
 
     context = nullcontext
+    # typer.echo("Evaluating" if test else "Training")
 
     if test:
         context = torch.no_grad
@@ -53,6 +60,8 @@ def train_model(
             item_show_func=lambda _: epoch_progress(losses, accuracies),
             label="Evaluating" if test else "Training",
         ) as batches:
+            # for batch in (pbar := tqdm(data_loader)):
+            # pbar.set_description(epoch_progress(losses, accuracies))
             for batch in batches:
                 optimizer.zero_grad()
                 model_params = {
@@ -62,12 +71,14 @@ def train_model(
                 labels = batch[1].to(config.model.device)
                 output: SequenceClassifierOutput = model(**model_params, labels=labels)
 
-                if output.loss:
+                if output.loss is not None:
+                    # For DataParallel, the loss has to be aggregated
+                    loss = output.loss.mean()
                     if not test:
-                        output.loss.backward()
+                        loss.backward()
                         optimizer.step()
 
-                    losses.append(output.loss.item())
+                    losses.append(loss.item())
                     accuracies.append(multi_acc(output.logits, labels).item())
 
     acc = np.mean(accuracies)
@@ -80,9 +91,8 @@ def train_model(
 
 dataset = AnnotationDataset()
 
-for file in config.path.datasets:
-    with gzip.open(file, "rt", encoding="utf-8") as f:
-        dataset.extend(AnnotationDataset.from_dict(json.load(f)))
+for file in Path(config.model.dataset_path).glob(config.model.dataset_pattern):
+    dataset.update(AnnotationDataset.open(file))
 
 train_data = EntailmentDataset(dataset.train).get_data_loader()
 test_data = EntailmentDataset(dataset.test).get_data_loader()
@@ -90,12 +100,10 @@ test_data = EntailmentDataset(dataset.test).get_data_loader()
 model: torch.nn.Module = BertForSequenceClassification.from_pretrained(
     config.model.pretrained, num_labels=3
 )
-model.to(config.model.device)
+model = torch.nn.DataParallel(model)
+model = model.to(config.model.device)
 
-optimizer = t.cast(
-    torch.optim.AdamW,
-    AdamW(model.parameters(), lr=config.model.learning_rate, correct_bias=False),
-)
+optimizer = torch.optim.AdamW(model.parameters(), lr=config.model.learning_rate)
 
 for epoch in range(config.model.epochs):
     typer.echo(f"Epoch {epoch+1}")
@@ -103,4 +111,4 @@ for epoch in range(config.model.epochs):
     train_acc, train_loss = train_model(model, train_data, optimizer, test=False)
     test_acc, test_loss = train_model(model, train_data, optimizer, test=True)
 
-torch.save(model.state_dict(), config.path.model)
+torch.save(model.state_dict(), config.model.path)

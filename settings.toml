@@ -1,20 +1,15 @@
-[path]
-model = "data/model.pt"
-datasets = [
-    "data/araucaria.json.gz",
-    "data/kialo.json.gz",
-    "data/pheme.json.gz",
-]
-
 [convert]
 random_state = 0
 
 [model]
+path = "data/model.pt"
+dataset_path = "data"
+dataset_pattern = "*.pickle"
 pretrained = "bert-base-uncased"
 device = "cpu"
-batch_size = 2048
+batch_size = 128
 max_sequence_length = 512
-epochs = 6
-learning_rate = 0.0003
+epochs = 3
+learning_rate = 0.00002
 
 [grpc]

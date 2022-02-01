@@ -4,6 +4,7 @@ import gzip
 import itertools
 import json
 import shutil
+import traceback
 import typing as t
 from dataclasses import dataclass, field
 from enum import Enum
@@ -14,19 +15,14 @@ import arguebuf
 import networkx as nx
 import pandas as pd
 import typer
-from dataclasses_json import DataClassJsonMixin
+from ordered_set import OrderedSet
 from sklearn.model_selection import train_test_split
 from sklearn.utils import resample
 
 from argument_nli.config import config
+from argument_nli.model import Annotation, AnnotationDataset, EntailmentLabel
 
 app = typer.Typer()
-
-
-class EntailmentLabel(str, Enum):
-    ENTAILMENT = "entailment"
-    CONTRADICTION = "contradiction"
-    NEUTRAL = "neutral"
 
 
 pheme_label = {
@@ -47,25 +43,8 @@ arguebuf_label = {
 }
 
 
-@dataclass(frozen=True, eq=True)
-class Annotation(DataClassJsonMixin):
-    premise: str
-    claim: str
-    label: EntailmentLabel
-
-
-@dataclass
-class AnnotationDataset(DataClassJsonMixin):
-    train: t.List[Annotation] = field(default_factory=list)
-    test: t.List[Annotation] = field(default_factory=list)
-
-    def extend(self, other: AnnotationDataset) -> None:
-        self.train.extend(other.train)
-        self.test.extend(other.test)
-
-
-def _pheme(files: t.Collection[Path]) -> t.List[Annotation]:
-    annotations = []
+def _pheme(files: t.Collection[Path]) -> OrderedSet[Annotation]:
+    annotations = OrderedSet()
     file: Path
 
     with typer.progressbar(files, show_pos=True) as batches:
@@ -78,19 +57,25 @@ def _pheme(files: t.Collection[Path]) -> t.List[Annotation]:
                 label = pheme_label.get(pair.attrib["entailment"])
 
                 if premise and claim and label:
-                    annotations.append(Annotation(premise, claim, label))
+                    annotations.add(Annotation(premise, claim, label))
 
     return annotations
 
 
-def _argument_graph(files: t.Collection[Path]) -> t.List[Annotation]:
-    annotations = []
+def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
+    annotations = OrderedSet()
     file: Path
 
     with typer.progressbar(files, show_pos=True) as batches:
         for file in batches:
-            graph = arguebuf.Graph.from_file(file)
-            non_neutral_annotations = []
+            try:
+                graph = arguebuf.Graph.from_file(file)
+            except Exception:
+                typer.echo(f"Skipping graph '{file}' because an error occured:")
+                typer.echo(traceback.print_exc())
+                continue
+
+            non_neutral_annotations = OrderedSet()
 
             for scheme in graph.scheme_nodes.values():
                 for premise, claim in itertools.product(
@@ -101,41 +86,52 @@ def _argument_graph(files: t.Collection[Path]) -> t.List[Annotation]:
                         and isinstance(premise, arguebuf.AtomNode)
                         and isinstance(claim, arguebuf.AtomNode)
                     ):
-                        non_neutral_annotations.append(
+                        non_neutral_annotations.add(
                             Annotation(premise.plain_text, claim.plain_text, label)
                         )
 
             # To speed up the computation for neutral samples, we use networkx
             nx_graph = graph.to_nx().to_undirected()
-            dist = dict(nx.all_pairs_shortest_path_length(nx_graph, cutoff=15))
+            dist = dict(nx.all_pairs_shortest_path_length(nx_graph, cutoff=25))
             atom_nodes = set(graph.atom_nodes.keys())
 
-            neutral_annotations = []
+            neutral_annotations = OrderedSet()
 
+            # distance in graph > cutoff (see nx.all_pairs_shortest_path_length)
             for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
                 if (
                     node1 in atom_nodes
                     and node2 in atom_nodes
-                    and (
-                        # distance in graph > 9 due to specified cutoff
-                        node2 not in dist[node1]
-                        or (
-                            # leaf nodes only need distance > 3
-                            # otherwise, small corpora like araucaria
-                            # would have no neutral samples
-                            len(graph.incoming_nodes(node1)) == 0
-                            and len(graph.incoming_nodes(node2)) == 0
-                            and dist[node1][node2] > 3
-                        )
-                    )
+                    and (node2 not in dist[node1])
                 ):
-                    neutral_annotations.append(
+                    neutral_annotations.add(
                         Annotation(
                             graph.atom_nodes[node1].plain_text,
                             graph.atom_nodes[node2].plain_text,
                             EntailmentLabel.NEUTRAL,
                         )
                     )
+
+            # leaf nodes only need distance > 3
+            # otherwise, small corpora like araucaria would have no neutral samples
+            if not neutral_annotations:
+                for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
+                    if (
+                        node1 in atom_nodes
+                        and node2 in atom_nodes
+                        and (
+                            len(graph.incoming_nodes(node1)) == 0
+                            and len(graph.incoming_nodes(node2)) == 0
+                            and dist[node1][node2] > 3
+                        )
+                    ):
+                        neutral_annotations.add(
+                            Annotation(
+                                graph.atom_nodes[node1].plain_text,
+                                graph.atom_nodes[node2].plain_text,
+                                EntailmentLabel.NEUTRAL,
+                            )
+                        )
 
             if len(neutral_annotations) > len(non_neutral_annotations):
                 neutral_annotations = t.cast(
@@ -148,8 +144,8 @@ def _argument_graph(files: t.Collection[Path]) -> t.List[Annotation]:
                     ),
                 )
 
-            annotations.extend(non_neutral_annotations)
-            annotations.extend(neutral_annotations)
+            annotations.update(non_neutral_annotations)
+            annotations.update(neutral_annotations)
 
     return annotations
 
@@ -159,18 +155,19 @@ def _convert(
     train_pattern: str,
     test_pattern: str,
     output: Path,
-    convert_func: t.Callable[[t.Collection[Path]], t.List[Annotation]],
+    convert_func: t.Callable[[t.Collection[Path]], OrderedSet[Annotation]],
 ):
     dataset = AnnotationDataset()
 
     typer.echo("Converting training data")
-    dataset.train.extend(convert_func(list(input.glob(train_pattern))))
+    dataset.train = convert_func(list(input.glob(train_pattern)))
 
     typer.echo("Converting testing data")
-    dataset.test.extend(convert_func(list(input.glob(test_pattern))))
+    dataset.test = convert_func(list(input.glob(test_pattern)))
 
-    with gzip.open(output.with_suffix(".json.gz"), "wt", encoding="utf-8") as f:
-        json.dump(dataset.to_dict(), f)
+    # with gzip.open(output.with_suffix(".json.gz"), "wt", encoding="utf-8") as f:
+    #     json.dump(dataset.to_dict(), f)
+    dataset.save(output)
 
 
 @app.command()
