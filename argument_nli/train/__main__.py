@@ -48,11 +48,7 @@ def train_model(
     losses = []
     accuracies = []
 
-    context = nullcontext
-    # typer.echo("Evaluating" if test else "Training")
-
-    if test:
-        context = torch.no_grad
+    context = torch.no_grad if test else nullcontext
 
     with context():
         with typer.progressbar(
@@ -74,6 +70,7 @@ def train_model(
                 if output.loss is not None:
                     # For DataParallel, the loss has to be aggregated
                     loss = output.loss.mean()
+
                     if not test:
                         loss.backward()
                         optimizer.step()
