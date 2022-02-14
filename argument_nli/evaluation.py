@@ -13,7 +13,7 @@ app = typer.Typer()
 
 def get_prob(
     details: t.Iterable[entailment_pb2.Detail],
-    entailment_type: entailment_pb2.Prediction.V,
+    entailment_type: int,
 ) -> float:
     return list(filter(lambda x: x.prediction == entailment_type, details))[
         0
