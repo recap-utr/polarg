@@ -1,3 +1,5 @@
+import typing as t
+
 import arg_services_helper
 import grpc
 import typer
@@ -14,19 +16,25 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
         self,
         req: entailment_pb2.EntailmentRequest,
         ctx: grpc.ServicerContext,
-    ) -> entailment_pb2.EntailmentResponse:
-        prediction, probabilities = model.predict(req.premise, req.claim)
+    ) -> t.Optional[entailment_pb2.EntailmentResponse]:
+        try:
+            prediction, probabilities = model.predict(req.premise, req.claim)
 
-        res = entailment_pb2.EntailmentResponse(prediction=prediction)
+            res = entailment_pb2.EntailmentResponse(prediction=prediction)
 
-        res.details.extend(
-            [
-                entailment_pb2.Detail(probability=probability, prediction=prediction)
-                for prediction, probability in probabilities.items()
-            ]
-        )
+            res.details.extend(
+                [
+                    entailment_pb2.Detail(
+                        probability=probability, prediction=prediction
+                    )
+                    for prediction, probability in probabilities.items()
+                ]
+            )
 
-        return res
+            return res
+
+        except Exception as e:
+            arg_services_helper.handle_except(e, ctx)
 
     def Entailments(
         self, request: entailment_pb2.EntailmentsRequest, context: grpc.ServicerContext
@@ -35,18 +43,18 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
 
 
 def add_services(server: grpc.Server):
-    """Add the services to the grpc server."""
-
     entailment_pb2_grpc.add_EntailmentServiceServicer_to_server(
         EntailmentService(), server
     )
 
 
 @app.command()
-def main(host: str, port: int, processes: int = 1, threads: int = 1):
-    """Main entry point for the server."""
-
-    arg_services_helper.serve(host, port, add_services, processes, threads)
+def main(address: str):
+    arg_services_helper.serve(
+        address,
+        add_services,
+        [arg_services_helper.full_service_name(entailment_pb2, "EntailmentService")],
+    )
 
 
 app()
