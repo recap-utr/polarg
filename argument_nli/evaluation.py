@@ -5,8 +5,12 @@ from pathlib import Path
 
 import arguebuf
 import grpc
+import networkx as nx
 import typer
 from arg_services.entailment.v1 import entailment_pb2, entailment_pb2_grpc
+from sklearn import metrics
+
+from argument_nli.config import config
 
 app = typer.Typer()
 
@@ -121,6 +125,13 @@ def adaptation(path: Path):
     )
 
 
+scheme2prediction = {
+    arguebuf.SchemeType.SUPPORT: entailment_pb2.Prediction.PREDICTION_ENTAILMENT,
+    arguebuf.SchemeType.ATTACK: entailment_pb2.Prediction.PREDICTION_CONTRADICTION,
+    None: entailment_pb2.Prediction.PREDICTION_NEUTRAL,
+}
+
+
 @app.command()
 def prediction(path: Path, pattern: str):
     graphs = [arguebuf.Graph.from_file(file) for file in path.glob(pattern)]
@@ -128,9 +139,8 @@ def prediction(path: Path, pattern: str):
     channel = grpc.insecure_channel("127.0.0.1:6789")
     client = entailment_pb2_grpc.EntailmentServiceStub(channel)
 
-    total_pairs = 0
-    total_pairs_without_neutral = 0
-    matching_pairs = 0
+    predicted_labels = []
+    true_labels = []
 
     for graph in graphs:
         for scheme in graph.scheme_nodes.values():
@@ -145,7 +155,7 @@ def prediction(path: Path, pattern: str):
                     and scheme.type
                     in (arguebuf.SchemeType.SUPPORT, arguebuf.SchemeType.ATTACK)
                 ):
-                    entailment = client.Entailment(
+                    entailment: entailment_pb2.EntailmentResponse = client.Entailment(
                         entailment_pb2.EntailmentRequest(
                             language="en",
                             premise=premise.plain_text,
@@ -153,25 +163,53 @@ def prediction(path: Path, pattern: str):
                         )
                     )
 
-                    total_pairs += 1
+                    predicted_labels.append(entailment.prediction)
+                    true_labels.append(
+                        scheme2prediction.get(
+                            scheme.type, entailment_pb2.Prediction.PREDICTION_NEUTRAL
+                        )
+                    )
 
-                    if entailment.prediction != entailment_pb2.PREDICTION_NEUTRAL:
-                        total_pairs_without_neutral += 1
+        if config.convert.include_neutral:
+            nx_graph = graph.to_nx().to_undirected()
+            dist = dict(
+                nx.all_pairs_shortest_path_length(
+                    nx_graph, cutoff=config.convert.neutral_distance
+                )
+            )
+            atom_nodes = set(graph.atom_nodes.keys())
 
-                    if (
-                        entailment.prediction == entailment_pb2.PREDICTION_ENTAILMENT
-                        and scheme.type == arguebuf.SchemeType.SUPPORT
-                    ) or (
-                        entailment.prediction == entailment_pb2.PREDICTION_CONTRADICTION
-                        and scheme.type == arguebuf.SchemeType.ATTACK
-                    ):
-                        matching_pairs += 1
+            # distance in graph > cutoff (see nx.all_pairs_shortest_path_length)
+            for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
+                if (
+                    node1 in atom_nodes
+                    and node2 in atom_nodes
+                    and (node2 not in dist[node1])
+                ):
+                    entailment: entailment_pb2.EntailmentResponse = client.Entailment(
+                        entailment_pb2.EntailmentRequest(
+                            language="en",
+                            premise=graph.atom_nodes[node1].plain_text,
+                            claim=graph.atom_nodes[node2].plain_text,
+                        )
+                    )
 
+                    predicted_labels.append(entailment.prediction)
+                    true_labels.append(entailment_pb2.Prediction.PREDICTION_NEUTRAL)
+
+    labels = sorted(set(predicted_labels).union(true_labels))
+    # labels = [
+    #     entailment_pb2.Prediction.PREDICTION_ENTAILMENT,
+    #     entailment_pb2.Prediction.PREDICTION_CONTRADICTION,
+    # ]
+
+    typer.echo(f"Labels: {[entailment_pb2.Prediction.Name(label) for label in labels]}")
+    typer.echo(f"Accuracy: {metrics.accuracy_score(true_labels, predicted_labels)}")
     typer.echo(
-        f"Matching pairs: {matching_pairs}/{total_pairs} ({matching_pairs/total_pairs})"
+        f"Recall: {metrics.recall_score(true_labels, predicted_labels, average=None, labels=labels)}"
     )
     typer.echo(
-        f"Matching pairs without neutral: {matching_pairs}/{total_pairs_without_neutral} ({matching_pairs/total_pairs_without_neutral})"
+        f"Precision: {metrics.precision_score(true_labels, predicted_labels, average=None, labels=labels)}"
     )
 
 

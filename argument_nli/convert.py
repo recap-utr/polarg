@@ -40,6 +40,7 @@ snli_label = {
 arguebuf_label = {
     arguebuf.SchemeType.SUPPORT: EntailmentLabel.ENTAILMENT,
     arguebuf.SchemeType.ATTACK: EntailmentLabel.CONTRADICTION,
+    None: EntailmentLabel.NEUTRAL,
 }
 
 
@@ -90,40 +91,24 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
                             Annotation(premise.plain_text, claim.plain_text, label)
                         )
 
-            # To speed up the computation for neutral samples, we use networkx
-            nx_graph = graph.to_nx().to_undirected()
-            dist = dict(nx.all_pairs_shortest_path_length(nx_graph, cutoff=25))
-            atom_nodes = set(graph.atom_nodes.keys())
-
             neutral_annotations = OrderedSet()
 
-            # distance in graph > cutoff (see nx.all_pairs_shortest_path_length)
-            for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
-                if (
-                    node1 in atom_nodes
-                    and node2 in atom_nodes
-                    and (node2 not in dist[node1])
-                ):
-                    neutral_annotations.add(
-                        Annotation(
-                            graph.atom_nodes[node1].plain_text,
-                            graph.atom_nodes[node2].plain_text,
-                            EntailmentLabel.NEUTRAL,
-                        )
+            if config.convert.include_neutral:
+                # To speed up the computation for neutral samples, we use networkx
+                nx_graph = graph.to_nx().to_undirected()
+                dist = dict(
+                    nx.all_pairs_shortest_path_length(
+                        nx_graph, cutoff=config.convert.neutral_distance
                     )
+                )
+                atom_nodes = set(graph.atom_nodes.keys())
 
-            # leaf nodes only need distance > 3
-            # otherwise, small corpora like araucaria would have no neutral samples
-            if not neutral_annotations:
+                # distance in graph > cutoff (see nx.all_pairs_shortest_path_length)
                 for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
                     if (
                         node1 in atom_nodes
                         and node2 in atom_nodes
-                        and (
-                            len(graph.incoming_nodes(node1)) == 0
-                            and len(graph.incoming_nodes(node2)) == 0
-                            and dist[node1][node2] > 3
-                        )
+                        and (node2 not in dist[node1])
                     ):
                         neutral_annotations.add(
                             Annotation(
@@ -133,16 +118,37 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
                             )
                         )
 
-            if len(neutral_annotations) > len(non_neutral_annotations):
-                neutral_annotations = t.cast(
-                    t.List[Annotation],
-                    resample(
-                        neutral_annotations,
-                        replace=False,
-                        random_state=config.convert.random_state,
-                        n_samples=len(non_neutral_annotations),
-                    ),
-                )
+                # leaf nodes only need distance > 3
+                # otherwise, small corpora like araucaria would have no neutral samples
+                # if not neutral_annotations:
+                #     for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
+                #         if (
+                #             node1 in atom_nodes
+                #             and node2 in atom_nodes
+                #             and (
+                #                 len(graph.incoming_nodes(node1)) == 0
+                #                 and len(graph.incoming_nodes(node2)) == 0
+                #                 and dist[node1][node2] > 3
+                #             )
+                #         ):
+                #             neutral_annotations.add(
+                #                 Annotation(
+                #                     graph.atom_nodes[node1].plain_text,
+                #                     graph.atom_nodes[node2].plain_text,
+                #                     EntailmentLabel.NEUTRAL,
+                #                 )
+                #             )
+
+                # if len(neutral_annotations) > len(non_neutral_annotations):
+                #     neutral_annotations = t.cast(
+                #         t.List[Annotation],
+                #         resample(
+                #             neutral_annotations,
+                #             replace=False,
+                #             random_state=config.convert.random_state,
+                #             n_samples=len(non_neutral_annotations),
+                #         ),
+                #     )
 
             annotations.update(non_neutral_annotations)
             annotations.update(neutral_annotations)

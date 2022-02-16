@@ -1,5 +1,7 @@
 [convert]
 random_state = 0
+include_neutral = false
+neutral_distance = 25
 
 [model]
 path = "data/model.pt"
@@ -9,7 +11,7 @@ pretrained = "bert-base-uncased"
 device = "cpu"
 batch_size = 128
 max_sequence_length = 512
-epochs = 3
+epochs = 5
 learning_rate = 0.00002
 
 [grpc]
