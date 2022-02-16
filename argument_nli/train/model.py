@@ -1,18 +1,15 @@
 import typing as t
-from dataclasses import dataclass
 
-import pandas as pd
 import torch
 from argument_nli.config import config
 from argument_nli.convert import Annotation, EntailmentLabel
-from torch.utils.data import DataLoader, Dataset, TensorDataset
-from transformers import BertModel, BertTokenizer
-from transformers.tokenization_utils_base import BatchEncoding
+from torch.utils.data import DataLoader, Dataset
+from transformers import AutoTokenizer  # type: ignore
 
 
 class EntailmentDataset(Dataset):
     def __init__(self, annotations: t.Sequence[Annotation]):
-        self.tokenizer: BertTokenizer = BertTokenizer.from_pretrained(
+        self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
             config.model.pretrained
         )
         self.label_dict = {
@@ -31,7 +28,7 @@ class EntailmentDataset(Dataset):
     def __getitem__(self, k: int) -> t.Tuple[t.Dict[str, torch.Tensor], torch.Tensor]:
         ann = self.annotations[k]
 
-        encoding = self.tokenizer.encode_plus(
+        encoding = self.tokenizer.encode_plus(  # type: ignore
             ann.premise,
             ann.claim,
             padding="max_length",  # TODO: default off

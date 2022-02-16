@@ -2,28 +2,27 @@ import typing as t
 from dataclasses import dataclass
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn.functional as F
 from arg_services.entailment.v1.entailment_pb2 import Prediction
 from argument_nli.config import config
-from argument_nli.convert import Annotation
-from torch.utils.data import DataLoader, Dataset, TensorDataset
-from transformers import BertForSequenceClassification, BertModel, BertTokenizer
+from transformers import AutoModelForSequenceClassification  # type: ignore
+from transformers import AutoTokenizer  # type: ignore
 from transformers.modeling_outputs import SequenceClassifierOutput
-from transformers.tokenization_utils_base import BatchEncoding
 
 
 class EntailmentClassifier:
     def __init__(self):
-        self.tokenizer: BertTokenizer = BertTokenizer.from_pretrained(
+        self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
             config.model.pretrained
         )
 
-        self.model: torch.nn.Module = BertForSequenceClassification.from_pretrained(
-            config.model.pretrained, num_labels=3
+        self.model: torch.nn.Module = (
+            AutoModelForSequenceClassification.from_pretrained(
+                config.model.pretrained, num_labels=3
+            )
         )
-        self.model = torch.nn.DataParallel(self.model)
+        self.model = torch.nn.DataParallel(self.model)  # type: ignore
         self.model.load_state_dict(
             torch.load(
                 config.model.path,
@@ -33,7 +32,7 @@ class EntailmentClassifier:
         self.model.eval()
         self.model.to(config.model.device)
 
-        self.label_dict = {
+        self.label_dict: t.Dict[int, int] = {
             0: Prediction.PREDICTION_NEUTRAL,
             1: Prediction.PREDICTION_ENTAILMENT,
             2: Prediction.PREDICTION_CONTRADICTION,
@@ -41,7 +40,7 @@ class EntailmentClassifier:
 
     def predict(self, premise: str, claim: str) -> t.Tuple[int, t.Dict[int, float]]:
         # we assume batch size to be 1, thus we can ignore padding -> improves performance
-        encoding = self.tokenizer.encode_plus(
+        encoding = self.tokenizer.encode_plus(  # type: ignore
             premise,
             claim,
             padding=False,  # TODO: default off

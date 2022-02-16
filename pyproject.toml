@@ -18,6 +18,7 @@ dataclasses-json = "^0.5.6"
 arguebuf = "^0.2.16"
 scikit-learn = "^1.0.2"
 ordered-set = "^4.1.0"
+sentencepiece = "^0.1.96"
 
 [tool.poetry.dev-dependencies]
 ipykernel = "^6.9.0"

@@ -16,9 +16,9 @@ import typer
 from argument_nli.config import config
 from argument_nli.model import AnnotationDataset
 from argument_nli.train.model import EntailmentDataset
-from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import BertForSequenceClassification
+from transformers import AutoModelForSequenceClassification  # type: ignore
 from transformers.modeling_outputs import SequenceClassifierOutput
 
 transformers_logging.set_verbosity_error()
@@ -94,10 +94,10 @@ for file in Path(config.model.dataset_path).glob(config.model.dataset_pattern):
 train_data = EntailmentDataset(dataset.train).get_data_loader()
 test_data = EntailmentDataset(dataset.test).get_data_loader()
 
-model: torch.nn.Module = BertForSequenceClassification.from_pretrained(
+model: torch.nn.Module = AutoModelForSequenceClassification.from_pretrained(
     config.model.pretrained, num_labels=3
 )
-model = torch.nn.DataParallel(model)
+model = torch.nn.DataParallel(model)  # type: ignore
 model = model.to(config.model.device)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=config.model.learning_rate)
