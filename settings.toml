@@ -5,13 +5,13 @@ neutral_distance = 25
 
 [model]
 path = "data/model.pt"
-dataset_path = "data"
-dataset_pattern = "*.pickle"
 pretrained = "microsoft/deberta-v3-base"
 device = "cpu"
-batch_size = 128
 max_sequence_length = 512
+
+[model.train]
+dataset_path = "data"
+dataset_pattern = "*.pickle"
+batch_size = 128
 epochs = 5
 learning_rate = 0.00002
-
-[grpc]

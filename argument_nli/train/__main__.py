@@ -88,7 +88,9 @@ def train_model(
 
 dataset = AnnotationDataset()
 
-for file in Path(config.model.dataset_path).glob(config.model.dataset_pattern):
+for file in Path(config.model.train.dataset_path).glob(
+    config.model.train.dataset_pattern
+):
     dataset.update(AnnotationDataset.open(file))
 
 train_data = EntailmentDataset(dataset.train).get_data_loader()

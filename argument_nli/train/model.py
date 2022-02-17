@@ -53,4 +53,4 @@ class EntailmentDataset(Dataset):
         # )
 
     def get_data_loader(self):
-        return DataLoader(self, shuffle=True, batch_size=config.model.batch_size)
+        return DataLoader(self, shuffle=True, batch_size=config.model.train.batch_size)
