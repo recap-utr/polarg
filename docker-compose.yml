@@ -2,36 +2,29 @@ version: "3"
 
 services:
   train:
-    build:
-      context: .
-      args:
-        POETRY_VERSION: 1.1.12
-        PYTHON_VERSION: 3.9
-    tty: true
-    stdin_open: true
-    ports:
-      - "5001:5001"
+    build: .
     volumes:
       - .:/app
-    command: python3.9 -m argument_nli.train
+    command: poetry run python -m argument_nli.train
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              # count: 2
-              device_ids: ["4", "5", "6", "7"]
+              count: 4
+              # device_ids: ["7"]
               capabilities: ["gpu"]
   deploy:
-    build:
-      context: .
-      args:
-        POETRY_VERSION: 1.1.12
-        PYTHON_VERSION: 3.9
-    tty: true
-    stdin_open: true
+    build: .
     ports:
-      - "5001:5001"
+      - "${PORT}:${PORT}"
     volumes:
       - .:/app
-    command: python3.9 -m argument_nli.deploy
+    command: poetry run python -m argument_nli.deploy ${HOST}:${PORT}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
