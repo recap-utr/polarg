@@ -52,21 +52,22 @@ protobuf = ">=4.21.1,<5.0.0"
 
 [[package]]
 name = "arguebuf"
-version = "0.3.0"
+version = "1.2.0"
 description = "A library for loading argument graphs in various formats (e.g., AIF)."
 category = "main"
 optional = false
 python-versions = ">=3.8,<4.0"
 
 [package.dependencies]
-arg-services = ">=0.3.6,<0.4.0"
+arg-services = ">=0.3.8,<0.4.0"
 graphviz = ">=0.20,<0.21"
-lxml = ">=4.8.0,<5.0.0"
-networkx = ">=2.8,<3.0"
+lxml = ">=4.9.0,<5.0.0"
+networkx = ">=2.8.4,<3.0.0"
 pendulum = ">=2.1.2,<3.0.0"
 
 [package.extras]
-docs = ["autodocsumm (>=0.2.8,<0.3.0)", "furo (>=2022.4.7,<2023.0.0)", "myst-parser (>=0.17.2,<0.18.0)", "sphinx (>=4.5.0,<5.0.0)", "sphinx-autoapi (>=1.8.4,<2.0.0)"]
+cli = ["deepl-pro (>=0.1.4,<0.2.0)", "typer[all] (>=0.4.0,<0.5.0)"]
+docs = ["autodocsumm (>=0.2.8,<0.3.0)", "furo (>=2022.6.4.1,<2023.0.0.0)", "myst-parser (>=0.18.0,<0.19.0)", "sphinx (>=4.5.0,<5.0.0)", "sphinx-autoapi (>=1.8.4,<2.0.0)"]
 
 [[package]]
 name = "asttokens"
@@ -1238,7 +1239,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "~3.8"
-content-hash = "869698809a13331727109b26c17c776e28dbc0a18ab3eb3e115f2ebebda9abf2"
+content-hash = "78633e71116e3357ddcb49f5399fc30b2f27ffda58f99df761fea8476b2a2f58"
 
 [metadata.files]
 aiohttp = [
@@ -1328,8 +1329,8 @@ arg-services = [
     {file = "arg_services-0.3.10-py3-none-any.whl", hash = "sha256:e98b134ba543956cd98edada398d5f691971d749a0541d6b6b26374c34190834"},
 ]
 arguebuf = [
-    {file = "Arguebuf-0.3.0-py3-none-any.whl", hash = "sha256:a69e9995c86a631ceff7fe5f0df54bb9345da2d5d0b0c1a59b4648569455e5d5"},
-    {file = "Arguebuf-0.3.0.tar.gz", hash = "sha256:a9398da3d8d888169024ad4e4f9ddb5fe6674b661bffff29e53f4a747eae1f9c"},
+    {file = "Arguebuf-1.2.0.tar.gz", hash = "sha256:06651d2a9b7240b9798c4e34881dcc1ecfd1f353207823b85da4d15e604c6e82"},
+    {file = "arguebuf-1.2.0-py3-none-any.whl", hash = "sha256:ab458fd47d09b068f5de1a432aa92a394f205aa411606e8107f790d2e359378c"},
 ]
 asttokens = [
     {file = "asttokens-2.0.5-py2.py3-none-any.whl", hash = "sha256:0844691e88552595a6f4a4281a9f7f79b8dd45ca4ccea82e5e05b4bbdb76705c"},
