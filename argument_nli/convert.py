@@ -1,23 +1,17 @@
 from __future__ import annotations
 
-import gzip
 import itertools
-import json
 import shutil
 import traceback
 import typing as t
-from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import arguebuf
 import networkx as nx
-import pandas as pd
 import typer
 from ordered_set import OrderedSet
 from sklearn.model_selection import train_test_split
-from sklearn.utils import resample
 
 from argument_nli.config import config
 from argument_nli.model import Annotation, AnnotationDataset, EntailmentLabel
@@ -25,22 +19,22 @@ from argument_nli.model import Annotation, AnnotationDataset, EntailmentLabel
 app = typer.Typer()
 
 
-pheme_label = {
+pheme_label: dict[str, EntailmentLabel] = {
     "ENTAILMENT": EntailmentLabel.ENTAILMENT,
     "CONTRADICTION": EntailmentLabel.CONTRADICTION,
     "UNKNOWN": EntailmentLabel.NEUTRAL,
 }
 
-snli_label = {
+snli_label: dict[str, EntailmentLabel] = {
     "entailment": EntailmentLabel.ENTAILMENT,
     "contradiction": EntailmentLabel.CONTRADICTION,
     "neutral": EntailmentLabel.NEUTRAL,
 }
 
-arguebuf_label = {
-    arguebuf.SchemeType.SUPPORT: EntailmentLabel.ENTAILMENT,
-    arguebuf.SchemeType.ATTACK: EntailmentLabel.CONTRADICTION,
-    None: EntailmentLabel.NEUTRAL,
+arguebuf_label: dict[t.Type[arguebuf.Scheme | None], EntailmentLabel] = {
+    arguebuf.Support: EntailmentLabel.ENTAILMENT,
+    arguebuf.Attack: EntailmentLabel.CONTRADICTION,
+    type(None): EntailmentLabel.NEUTRAL,
 }
 
 
@@ -70,7 +64,7 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
     with typer.progressbar(files, show_pos=True) as batches:
         for file in batches:
             try:
-                graph = arguebuf.Graph.from_file(file)
+                graph = arguebuf.load.file(file)
             except Exception:
                 typer.echo(f"Skipping graph '{file}' because an error occured:")
                 typer.echo(traceback.print_exc())
@@ -78,12 +72,12 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
 
             non_neutral_annotations = OrderedSet()
 
-            for scheme in graph.scheme_nodes.values():
+            for scheme_node in graph.scheme_nodes.values():
                 for premise, claim in itertools.product(
-                    graph.incoming_nodes(scheme), graph.outgoing_nodes(scheme)
+                    graph.incoming_nodes(scheme_node), graph.outgoing_nodes(scheme_node)
                 ):
                     if (
-                        (label := arguebuf_label.get(scheme.type))
+                        (label := arguebuf_label[type(scheme_node.scheme)])
                         and isinstance(premise, arguebuf.AtomNode)
                         and isinstance(claim, arguebuf.AtomNode)
                     ):
@@ -95,7 +89,7 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
 
             if config.convert.include_neutral:
                 # To speed up the computation for neutral samples, we use networkx
-                nx_graph = graph.to_nx().to_undirected()
+                nx_graph = arguebuf.dump.networkx(graph).to_undirected()
                 dist = dict(
                     nx.all_pairs_shortest_path_length(
                         nx_graph, cutoff=config.convert.neutral_distance

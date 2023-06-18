@@ -1,14 +1,16 @@
 import typing as t
-from dataclasses import dataclass
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from arg_services.entailment.v1.entailment_pb2 import Prediction
-from argument_nli.config import config
-from transformers import AutoModelForSequenceClassification  # type: ignore
-from transformers import AutoTokenizer  # type: ignore
+from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
+from transformers import (
+    AutoModelForSequenceClassification,  # type: ignore
+    AutoTokenizer,  # type: ignore
+)
 from transformers.modeling_outputs import SequenceClassifierOutput
+
+from argument_nli.config import config
 
 
 class EntailmentClassifier:
@@ -32,13 +34,15 @@ class EntailmentClassifier:
         self.model.eval()
         self.model.to(config.model.device)
 
-        self.label_dict: t.Dict[int, int] = {
-            0: Prediction.PREDICTION_NEUTRAL,
-            1: Prediction.PREDICTION_ENTAILMENT,
-            2: Prediction.PREDICTION_CONTRADICTION,
+        self.label_dict: t.Dict[int, EntailmentType.ValueType] = {
+            0: EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
+            1: EntailmentType.ENTAILMENT_TYPE_ENTAILMENT,
+            2: EntailmentType.ENTAILMENT_TYPE_CONTRADICTION,
         }
 
-    def predict(self, premise: str, claim: str) -> t.Tuple[int, t.Dict[int, float]]:
+    def predict(
+        self, premise: str, claim: str
+    ) -> t.Tuple[EntailmentType.ValueType, t.Dict[EntailmentType.ValueType, float]]:
         # we assume batch size to be 1, thus we can ignore padding -> improves performance
         encoding = self.tokenizer.encode_plus(  # type: ignore
             premise,

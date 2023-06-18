@@ -1,9 +1,9 @@
 import typing as t
 
-import arg_services_helper
+import arg_services
 import grpc
 import typer
-from arg_services.entailment.v1 import entailment_pb2, entailment_pb2_grpc
+from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 
 from .model import EntailmentClassifier
 
@@ -17,24 +17,20 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
         req: entailment_pb2.EntailmentRequest,
         ctx: grpc.ServicerContext,
     ) -> t.Optional[entailment_pb2.EntailmentResponse]:
-        try:
-            prediction, probabilities = model.predict(req.premise, req.claim)
+        prediction, probabilities = model.predict(req.premise, req.claim)
 
-            res = entailment_pb2.EntailmentResponse(prediction=prediction)
+        res = entailment_pb2.EntailmentResponse(entailment_type=prediction)
 
-            res.details.extend(
-                [
-                    entailment_pb2.Detail(
-                        probability=probability, prediction=prediction
-                    )
-                    for prediction, probability in probabilities.items()
-                ]
-            )
+        res.predictions.extend(
+            [
+                entailment_pb2.EntailmentPrediction(
+                    probability=probability, type=prediction
+                )
+                for prediction, probability in probabilities.items()
+            ]
+        )
 
-            return res
-
-        except Exception as e:
-            arg_services_helper.handle_except(e, ctx)
+        return res
 
     def Entailments(
         self, request: entailment_pb2.EntailmentsRequest, context: grpc.ServicerContext
@@ -50,10 +46,10 @@ def add_services(server: grpc.Server):
 
 @app.command()
 def main(address: str):
-    arg_services_helper.serve(
+    arg_services.serve(
         address,
         add_services,
-        [arg_services_helper.full_service_name(entailment_pb2, "EntailmentService")],
+        [arg_services.full_service_name(entailment_pb2, "EntailmentService")],
     )
 
 

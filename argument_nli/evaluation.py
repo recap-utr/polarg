@@ -1,4 +1,3 @@
-import csv
 import itertools
 import typing as t
 from pathlib import Path
@@ -7,7 +6,7 @@ import arguebuf
 import grpc
 import networkx as nx
 import typer
-from arg_services.entailment.v1 import entailment_pb2, entailment_pb2_grpc
+from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from sklearn import metrics
 
 from argument_nli.config import config
@@ -16,12 +15,10 @@ app = typer.Typer()
 
 
 def get_prob(
-    details: t.Iterable[entailment_pb2.Detail],
+    details: t.Iterable[entailment_pb2.EntailmentPrediction],
     entailment_type: int,
 ) -> float:
-    return list(filter(lambda x: x.prediction == entailment_type, details))[
-        0
-    ].probability
+    return list(filter(lambda x: x.type == entailment_type, details))[0].probability
 
 
 @app.command()
@@ -34,8 +31,8 @@ def adaptation(path: Path):
         adapted_file = graph_name / "adapted.json"
 
         if retrieved_file.exists() and adapted_file.exists():
-            retrieved_graphs[str(graph_name)] = arguebuf.Graph.from_file(retrieved_file)
-            adapted_graphs[str(graph_name)] = arguebuf.Graph.from_file(adapted_file)
+            retrieved_graphs[str(graph_name)] = arguebuf.load.file(retrieved_file)
+            adapted_graphs[str(graph_name)] = arguebuf.load.file(adapted_file)
 
     channel = grpc.insecure_channel("127.0.0.1:6789")
     client = entailment_pb2_grpc.EntailmentServiceStub(channel)
@@ -79,31 +76,28 @@ def adaptation(path: Path):
                         "graph_name": graph_name,
                         "source": retrieved_premise.plain_text,
                         "target": retrieved_claim.plain_text,
-                        "retrieved_entailment": retrieved_entailment.prediction,
-                        "adapted_entailment": adapted_entailment.prediction,
+                        "retrieved_entailment": retrieved_entailment.entailment_type,
+                        "adapted_entailment": adapted_entailment.entailment_type,
                         "entailment_prob": get_prob(
-                            adapted_entailment.details,
-                            entailment_pb2.PREDICTION_ENTAILMENT,
-                        )
-                        - get_prob(
-                            retrieved_entailment.details,
-                            entailment_pb2.PREDICTION_ENTAILMENT,
+                            adapted_entailment.predictions,
+                            entailment_pb2.ENTAILMENT_TYPE_ENTAILMENT,
+                        ) - get_prob(
+                            retrieved_entailment.predictions,
+                            entailment_pb2.ENTAILMENT_TYPE_ENTAILMENT,
                         ),
                         "contradiction_prob": get_prob(
-                            adapted_entailment.details,
-                            entailment_pb2.PREDICTION_CONTRADICTION,
-                        )
-                        - get_prob(
-                            retrieved_entailment.details,
-                            entailment_pb2.PREDICTION_CONTRADICTION,
+                            adapted_entailment.predictions,
+                            entailment_pb2.ENTAILMENT_TYPE_CONTRADICTION,
+                        ) - get_prob(
+                            retrieved_entailment.predictions,
+                            entailment_pb2.ENTAILMENT_TYPE_CONTRADICTION,
                         ),
                         "neutral_prob": get_prob(
-                            adapted_entailment.details,
-                            entailment_pb2.PREDICTION_NEUTRAL,
-                        )
-                        - get_prob(
-                            retrieved_entailment.details,
-                            entailment_pb2.PREDICTION_NEUTRAL,
+                            adapted_entailment.predictions,
+                            entailment_pb2.ENTAILMENT_TYPE_NEUTRAL,
+                        ) - get_prob(
+                            retrieved_entailment.predictions,
+                            entailment_pb2.ENTAILMENT_TYPE_NEUTRAL,
                         ),
                     }
 
@@ -116,25 +110,31 @@ def adaptation(path: Path):
                     ):
                         adapted_pairs += 1
 
-                    if retrieved_entailment.prediction == adapted_entailment.prediction:
+                    if (
+                        retrieved_entailment.entailment_type
+                        == adapted_entailment.entailment_type
+                    ):
                         matching_pairs += 1
 
     print(f"Adapted pairs: {adapted_pairs}/{total_pairs} ({adapted_pairs/total_pairs})")
     print(
-        f"Matching predictions: {matching_pairs}/{total_pairs} ({matching_pairs/total_pairs})"
+        "Matching predictions:"
+        f" {matching_pairs}/{total_pairs} ({matching_pairs/total_pairs})"
     )
 
 
-scheme2prediction = {
-    arguebuf.SchemeType.SUPPORT: entailment_pb2.Prediction.PREDICTION_ENTAILMENT,
-    arguebuf.SchemeType.ATTACK: entailment_pb2.Prediction.PREDICTION_CONTRADICTION,
-    None: entailment_pb2.Prediction.PREDICTION_NEUTRAL,
+scheme2prediction: dict[
+    t.Type[arguebuf.Scheme | None], entailment_pb2.EntailmentType.ValueType
+] = {
+    arguebuf.Support: entailment_pb2.EntailmentType.ENTAILMENT_TYPE_ENTAILMENT,
+    arguebuf.Attack: entailment_pb2.EntailmentType.ENTAILMENT_TYPE_CONTRADICTION,
+    type(None): entailment_pb2.EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
 }
 
 
 @app.command()
 def prediction(path: Path, pattern: str):
-    graphs = [arguebuf.Graph.from_file(file) for file in path.glob(pattern)]
+    graphs = [arguebuf.load.file(file) for file in path.glob(pattern)]
 
     channel = grpc.insecure_channel("127.0.0.1:6789")
     client = entailment_pb2_grpc.EntailmentServiceStub(channel)
@@ -143,17 +143,16 @@ def prediction(path: Path, pattern: str):
     true_labels = []
 
     for graph in graphs:
-        for scheme in graph.scheme_nodes.values():
+        for scheme_node in graph.scheme_nodes.values():
             for claim, premise in itertools.product(
-                graph.outgoing_nodes(scheme),
-                graph.incoming_nodes(scheme),
+                graph.outgoing_nodes(scheme_node),
+                graph.incoming_nodes(scheme_node),
             ):
                 if (
                     isinstance(claim, arguebuf.AtomNode)
                     and isinstance(premise, arguebuf.AtomNode)
-                    and isinstance(scheme, arguebuf.SchemeNode)
-                    and scheme.type
-                    in (arguebuf.SchemeType.SUPPORT, arguebuf.SchemeType.ATTACK)
+                    and isinstance(scheme_node, arguebuf.SchemeNode)
+                    and type(scheme_node.scheme) in (arguebuf.Support, arguebuf.Attack)
                 ):
                     entailment: entailment_pb2.EntailmentResponse = client.Entailment(
                         entailment_pb2.EntailmentRequest(
@@ -163,15 +162,16 @@ def prediction(path: Path, pattern: str):
                         )
                     )
 
-                    predicted_labels.append(entailment.prediction)
+                    predicted_labels.append(entailment.entailment_type)
                     true_labels.append(
                         scheme2prediction.get(
-                            scheme.type, entailment_pb2.Prediction.PREDICTION_NEUTRAL
+                            type(scheme_node.scheme),
+                            entailment_pb2.EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
                         )
                     )
 
         if config.convert.include_neutral:
-            nx_graph = graph.to_nx().to_undirected()
+            nx_graph = arguebuf.dump.networkx(graph).to_undirected()
             dist = dict(
                 nx.all_pairs_shortest_path_length(
                     nx_graph, cutoff=config.convert.neutral_distance
@@ -194,22 +194,28 @@ def prediction(path: Path, pattern: str):
                         )
                     )
 
-                    predicted_labels.append(entailment.prediction)
-                    true_labels.append(entailment_pb2.Prediction.PREDICTION_NEUTRAL)
+                    predicted_labels.append(entailment.entailment_type)
+                    true_labels.append(
+                        entailment_pb2.EntailmentType.ENTAILMENT_TYPE_NEUTRAL
+                    )
 
     labels = sorted(set(predicted_labels).union(true_labels))
     # labels = [
-    #     entailment_pb2.Prediction.PREDICTION_ENTAILMENT,
-    #     entailment_pb2.Prediction.PREDICTION_CONTRADICTION,
+    #     entailment_pb2.Prediction.ENTAILMENT_TYPE_ENTAILMENT,
+    #     entailment_pb2.Prediction.ENTAILMENT_TYPE_CONTRADICTION,
     # ]
 
-    typer.echo(f"Labels: {[entailment_pb2.Prediction.Name(label) for label in labels]}")
+    typer.echo(
+        f"Labels: {[entailment_pb2.EntailmentType.Name(label) for label in labels]}"
+    )
     typer.echo(f"Accuracy: {metrics.accuracy_score(true_labels, predicted_labels)}")
     typer.echo(
-        f"Recall: {metrics.recall_score(true_labels, predicted_labels, average=None, labels=labels)}"
+        "Recall:"
+        f" {metrics.recall_score(true_labels, predicted_labels, average=None, labels=labels)}"
     )
     typer.echo(
-        f"Precision: {metrics.precision_score(true_labels, predicted_labels, average=None, labels=labels)}"
+        "Precision:"
+        f" {metrics.precision_score(true_labels, predicted_labels, average=None, labels=labels)}"
     )
 
 

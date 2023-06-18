@@ -1,25 +1,20 @@
 # https://github.com/dh1105/Sentence-Entailment/blob/main/Sentence_Entailment_BERT.ipynb
 
-import gzip
-import json
-import pickle
 import typing as t
 from contextlib import nullcontext
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 import transformers.utils.logging as transformers_logging
 import typer
+from torch.utils.data import DataLoader
+from transformers import AutoModelForSequenceClassification  # type: ignore
+from transformers.modeling_outputs import SequenceClassifierOutput
+
 from argument_nli.config import config
 from argument_nli.model import AnnotationDataset
 from argument_nli.train.model import EntailmentDataset
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification  # type: ignore
-from transformers.modeling_outputs import SequenceClassifierOutput
 
 transformers_logging.set_verbosity_error()
 
@@ -42,7 +37,7 @@ def train_model(
     data_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     test: bool,
-) -> t.Tuple[float, float]:
+) -> t.Tuple[np.float_, np.float_]:
     model.train()
     batch: t.Tuple[t.Dict[str, torch.Tensor], torch.Tensor]
     losses = []
