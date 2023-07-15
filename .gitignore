@@ -238,8 +238,11 @@ $RECYCLE.BIN/
 # Ignore dynaconf secret files
 .secrets.*
 settings.local.toml
-data/
+data/*
 .python-version
 *.ipynb
 /sync.sh
 /.vscode/
+/openai_api_key.txt
+/.direnv/
+/lightning_logs/

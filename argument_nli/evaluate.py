@@ -56,8 +56,8 @@ def adaptation(path: Path):
                     adapted_claim = adapted_graph.atom_nodes[retrieved_claim.id]
                     adapted_premise = adapted_graph.atom_nodes[retrieved_premise.id]
 
-                    retrieved_entailment = client.Entailment(
-                        entailment_pb2.EntailmentRequest(
+                    retrieved_entailment = client.Entailments(
+                        entailment_pb2.EntailmentsRequest(
                             language="en",
                             premise=retrieved_premise.plain_text,
                             claim=retrieved_claim.plain_text,

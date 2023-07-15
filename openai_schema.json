@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Argument entailment",
+  "description": "Relation between a pair of arguments",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "entailment_type": {
+        "description": "Relation between the provided claim and premise",
+        "type": "string",
+        "enum": ["support", "attack", "neutral"]
+      },
+      "probability": {
+        "description": "Accuracy of the predicted entailment_type",
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    }
+  }
+}
