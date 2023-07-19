@@ -26,71 +26,66 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
     def Entailments(
         self, req: entailment_pb2.EntailmentsRequest, ctx: grpc.ServicerContext
     ) -> entailment_pb2.EntailmentsResponse:
+        res = entailment_pb2.EntailmentsResponse()
+        queries = (
+            req.query
+            if len(req.query) > 0
+            else [
+                entailment_pb2.EntailmentQuery(premise_id=premise, claim_id=claim)
+                for premise, claim in itertools.product(req.adus, req.adus)
+                if premise != claim
+            ]
+        )
+
+        annotations: list[Annotation] = []
+        predictions: list[ProbsType] = []
+
+        for query in queries:
+            premise = req.adus[query.premise_id].text
+            claim = req.adus[query.claim_id].text
+            annotations.append(Annotation(premise, claim, None))
+
         try:
-            res = entailment_pb2.EntailmentsResponse()
-            queries = (
-                req.query
-                if len(req.query) > 0
-                else [
-                    entailment_pb2.EntailmentQuery(premise_id=premise, claim_id=claim)
-                    for premise, claim in itertools.product(req.adus, req.adus)
-                    if premise != claim
-                ]
+            model_type = req.extras["model"]
+        except ValueError:
+            model_type = None
+
+        if model_type == "openai":
+            for ann in annotations:
+                predictions.append(asyncio.run(openai.predict(ann.premise, ann.claim)))
+
+        else:
+            dataloader = DataLoader(
+                EntailmentDataset(annotations),
+                batch_size=config.model.batch_size,
+            )
+            predictions = t.cast(
+                list[ProbsType],
+                self.trainer.predict(self.model, dataloaders=dataloader),
             )
 
-            annotations: list[Annotation] = []
-            predictions: list[ProbsType] = []
+        assert len(queries) == len(predictions)
 
-            for query in queries:
-                premise = req.adus[query.premise_id].text
-                claim = req.adus[query.claim_id].text
-                annotations.append(Annotation(premise, claim, None))
+        for query, probabilities in zip(queries, predictions):
+            prediction: entailment_pb2.EntailmentType.ValueType = max(
+                probabilities, key=probabilities.get  # type: ignore
+            )
 
-            try:
-                model_type = req.extras["model"]
-            except ValueError:
-                model_type = None
-
-            if model_type == "openai":
-                for ann in annotations:
-                    predictions.append(
-                        asyncio.run(openai.predict(ann.premise, ann.claim))
-                    )
-
-            else:
-                dataloader = DataLoader(
-                    EntailmentDataset(annotations),
-                    batch_size=config.model.batch_size,
+            res.entailments.append(
+                entailment_pb2.Entailment(
+                    type=prediction,
+                    predictions=[
+                        entailment_pb2.EntailmentPrediction(
+                            probability=probability, type=prediction
+                        )
+                        for prediction, probability in probabilities.items()
+                    ],
+                    premise_id=query.premise_id,
+                    claim_id=query.claim_id,
                 )
-                predictions = t.cast(
-                    list[ProbsType],
-                    self.trainer.predict(self.model, dataloaders=dataloader),
-                )
+            )
 
-            assert len(queries) == len(predictions)
-
-            for query, probabilities in zip(queries, predictions):
-                prediction: entailment_pb2.EntailmentType.ValueType = max(
-                    probabilities, key=probabilities.get  # type: ignore
-                )
-
-                res.entailments.append(
-                    entailment_pb2.Entailment(
-                        type=prediction,
-                        predictions=[
-                            entailment_pb2.EntailmentPrediction(
-                                probability=probability, type=prediction
-                            )
-                            for prediction, probability in probabilities.items()
-                        ],
-                        premise_id=query.premise_id,
-                        claim_id=query.claim_id,
-                    )
-                )
-
-            return res
-        except Exception as e:
-            arg_services.handle_except(e, ctx)
+        return res
 
 
 def add_services(server: grpc.Server):
