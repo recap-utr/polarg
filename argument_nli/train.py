@@ -21,9 +21,9 @@ trainer = Trainer(
     #     # offload_parameters=True,
     # ),
 )
-model = EntailmentModule()
+module = EntailmentModule()
 
-trainer.fit(model, datamodule=datamodule)
+trainer.fit(module, datamodule=datamodule)
 trainer.test(datamodule=datamodule, ckpt_path="best")  # or last
 
 trainer.save_checkpoint(config.model.path)

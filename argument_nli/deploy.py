@@ -20,27 +20,28 @@ app = typer.Typer()
 class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
     def __init__(self):
         typer.echo("Loading model...")
-        self.model = EntailmentModule.load_from_checkpoint(config.model.path)
-        self.trainer = Trainer()
+        try:
+            self.module = EntailmentModule.load_from_checkpoint(config.model.path)
+            self.trainer = Trainer()
+        except FileNotFoundError:
+            typer.echo("Model not found, only OpenAI will be available.")
 
     def Entailments(
         self, req: entailment_pb2.EntailmentsRequest, ctx: grpc.ServicerContext
     ) -> entailment_pb2.EntailmentsResponse:
         res = entailment_pb2.EntailmentsResponse()
-        queries = (
-            req.query
-            if len(req.query) > 0
-            else [
+
+        if len(req.query) == 0:
+            req.query.extend(
                 entailment_pb2.EntailmentQuery(premise_id=premise, claim_id=claim)
                 for premise, claim in itertools.product(req.adus, req.adus)
                 if premise != claim
-            ]
-        )
+            )
 
         annotations: list[Annotation] = []
         predictions: list[ProbsType] = []
 
-        for query in queries:
+        for query in req.query:
             premise = req.adus[query.premise_id].text
             claim = req.adus[query.claim_id].text
             annotations.append(Annotation(premise, claim, None))
@@ -60,12 +61,12 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
             )
             predictions = t.cast(
                 list[ProbsType],
-                self.trainer.predict(self.model, dataloaders=dataloader),
+                self.trainer.predict(self.module, dataloaders=dataloader),
             )
 
-        assert len(queries) == len(predictions)
+        assert len(req.query) == len(predictions)
 
-        for query, probabilities in zip(queries, predictions):
+        for query, probabilities in zip(req.query, predictions):
             prediction: entailment_pb2.EntailmentType.ValueType = max(
                 probabilities, key=probabilities.get  # type: ignore
             )
