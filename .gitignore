@@ -246,3 +246,4 @@ data/*
 /openai_api_key.txt
 /.direnv/
 /lightning_logs/
+/wandb/
