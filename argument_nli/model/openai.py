@@ -6,7 +6,7 @@ import backoff
 import openai
 from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
 
-openai.api_key_path = "./openai_api_key.txt"
+from argument_nli.model.annotation import Annotation
 
 
 class ChatMessage(t.TypedDict):
@@ -26,36 +26,46 @@ async def _fetch_openai_chat(*args, **kwargs) -> t.Any:
     return await openai.ChatCompletion.acreate(*args, **kwargs)
 
 
-async def predict(premise: str, claim: str) -> t.Dict[EntailmentType.ValueType, float]:
+async def predict(
+    annotations: list[Annotation],
+) -> list[dict[EntailmentType.ValueType, float]]:
+    predictions = []
+
     with Path("./openai_schema.json").open("r") as fp:
         schema = json.load(fp)
 
-    messages: list[ChatMessage] = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant that predicts the relation/entailment"
-                " between the premise and the claim of an argument. You shall predict"
-                " whether the premise supports or attacks the claim or has a neutral"
-                " relation to it."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"""
-                Premise: {premise}.
-                Claim: {claim}.
-            """,
-        },
-    ]
+    for annotation in annotations:
+        messages: list[ChatMessage] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant that predicts the relation/entailment"
+                    " between the premise and the claim of an argument. You shall"
+                    " predict whether the premise supports or attacks the claim or has"
+                    " a neutral relation to it."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"""
+                    Premise: {annotation.premise}.
+                    Claim: {annotation.claim}.
+                """,
+            },
+        ]
 
-    response = await _fetch_openai_chat(
-        model="gpt-3.5-turbo-0613",
-        messages=messages,
-        functions=[{"name": "predict_entailment", "parameters": schema}],
-        function_call={"name": "predict_entailment"},
-    )
+        response = await _fetch_openai_chat(
+            model="gpt-3.5-turbo-0613",
+            messages=messages,
+            functions=[{"name": "predict_entailment", "parameters": schema}],
+            function_call={"name": "predict_entailment"},
+        )
 
-    results = response.choices[0].message.function_call.arguments
+        result = json.loads(response.choices[0].message.function_call.arguments)
+        probs: dict[EntailmentType.ValueType, float] = {
+            type_map[result["entailment_type"]]: result["probability"]
+            for result in result["entailments"]
+        }
+        predictions.append(probs)
 
-    return {type_map[result.entailment_type]: result.probability for result in results}
+    return predictions

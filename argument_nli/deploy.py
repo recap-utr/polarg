@@ -51,8 +51,7 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
             model_type = None
 
         if model_type == "openai":
-            for ann in annotations:
-                predictions.append(asyncio.run(openai.predict(ann.premise, ann.claim)))
+            predictions = asyncio.run(openai.predict(annotations))
 
         else:
             dataloader = DataLoader(
