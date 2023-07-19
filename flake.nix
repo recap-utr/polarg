@@ -52,8 +52,6 @@
           packages = [poetry python upload];
           POETRY_VIRTUALENVS_IN_PROJECT = true;
           LD_LIBRARY_PATH = with pkgs; lib.makeLibraryPath [stdenv.cc.cc zlib "/run/opengl-driver"];
-          # TODO: https://github.com/google/sentencepiece/issues/889
-          PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION = "python";
           shellHook = ''
             ${lib.getExe poetry} env use ${lib.getExe python}
             ${lib.getExe poetry} install --all-extras --no-root

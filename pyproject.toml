@@ -7,7 +7,7 @@ authors = ["Mirko Lenz <info@mirko-lenz.de>"]
 [tool.poetry.dependencies]
 python = "^3.10"
 dynaconf = "^3.2.0"
-transformers = "^4.30.2"
+transformers = "^4.31.0"
 datasets = "^2.13.1"
 torch = ">=2.0.0, <3.0.0, !=2.0.1"
 lxml = "^4.9.3"
