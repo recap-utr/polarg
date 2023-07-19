@@ -155,6 +155,7 @@ def _convert(
     convert_func: t.Callable[[t.Collection[Path]], OrderedSet[Annotation]],
 ):
     dataset = AnnotationDataset()
+    typer.echo(f"Processing {input} with pattern {pattern}...")
 
     typer.echo("Converting training data")
     dataset.train = convert_func(list(input.glob("training/" + pattern)))
@@ -186,6 +187,26 @@ def argument_graph(
     output: Path,
 ):
     _convert(input, pattern, output, _argument_graph)
+
+
+arguebuf_patterns = {
+    "kialo": "*.txt",
+    "kialo-nilesc": "*.txt",
+    "microtexts": "*.xml",
+    "microtexts-v2": "*.xml",
+    "persuasive-essays": "*.ann",
+    "twitter-us2020": "*.json",
+    "us-2016": "*.json",
+}
+
+
+@app.command()
+def all_argument_graphs(input: Path, output: t.Optional[Path] = None):
+    if output is None:
+        output = input
+
+    for name, pattern in arguebuf_patterns.items():
+        _convert(input / name, pattern, output / f"{name}.pickle", _argument_graph)
 
 
 if __name__ == "__main__":
