@@ -21,8 +21,10 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
     def __init__(self):
         typer.echo("Loading model...")
         try:
-            self.module = EntailmentModule.load_from_checkpoint(config.model.path)
-            self.trainer = Trainer()
+            self.module = EntailmentModule.load_from_checkpoint(
+                config.model.path, strict=False
+            )
+            self.trainer = Trainer(accelerator="gpu", logger=False)
         except FileNotFoundError:
             typer.echo("Model not found, only OpenAI will be available.")
 
