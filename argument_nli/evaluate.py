@@ -41,7 +41,8 @@ def main(address: str, path: Path, pattern: str):
                 for node in graph.atom_nodes.values()
             },
         )
-        req.extras["model"] = "openai"
+        # TODO: add model selection
+        # req.extras["model"] = "openai"
 
         for scheme_node in graph.scheme_nodes.values():
             for claim, premise in itertools.product(
