@@ -33,59 +33,63 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
     ) -> entailment_pb2.EntailmentsResponse:
         res = entailment_pb2.EntailmentsResponse()
 
-        if len(req.query) == 0:
-            req.query.extend(
-                entailment_pb2.EntailmentQuery(premise_id=premise, claim_id=claim)
-                for premise, claim in itertools.product(req.adus, req.adus)
-                if premise != claim
-            )
-
-        annotations: list[Annotation] = []
-        predictions: list[ProbsType] = []
-
-        for query in req.query:
-            premise = req.adus[query.premise_id].text
-            claim = req.adus[query.claim_id].text
-            annotations.append(Annotation(premise, claim, None))
-
         try:
-            model_type = req.extras["model"]
-        except ValueError:
-            model_type = None
-
-        if model_type == "openai":
-            predictions = asyncio.run(openai.predict(annotations))
-
-        else:
-            dataloader = DataLoader(
-                EntailmentDataset(annotations),
-                batch_size=config.model.batch_size,
-            )
-            predictions = t.cast(
-                list[ProbsType],
-                self.trainer.predict(self.module, dataloaders=dataloader),
-            )
-
-        assert len(req.query) == len(predictions)
-
-        for query, probabilities in zip(req.query, predictions):
-            prediction: entailment_pb2.EntailmentType.ValueType = max(
-                probabilities, key=probabilities.get  # type: ignore
-            )
-
-            res.entailments.append(
-                entailment_pb2.Entailment(
-                    type=prediction,
-                    predictions=[
-                        entailment_pb2.EntailmentPrediction(
-                            probability=probability, type=prediction
-                        )
-                        for prediction, probability in probabilities.items()
-                    ],
-                    premise_id=query.premise_id,
-                    claim_id=query.claim_id,
+            if len(req.query) == 0:
+                req.query.extend(
+                    entailment_pb2.EntailmentQuery(premise_id=premise, claim_id=claim)
+                    for premise, claim in itertools.product(req.adus, req.adus)
+                    if premise != claim
                 )
-            )
+
+            annotations: list[Annotation] = []
+            predictions: list[ProbsType] = []
+
+            for query in req.query:
+                premise = req.adus[query.premise_id].text
+                claim = req.adus[query.claim_id].text
+                annotations.append(Annotation(premise, claim, None))
+
+            try:
+                model_type = req.extras["model"]
+            except ValueError:
+                model_type = None
+
+            if model_type == "openai":
+                predictions = asyncio.run(openai.predict(annotations))
+
+            else:
+                dataloader = DataLoader(
+                    EntailmentDataset(annotations),
+                    batch_size=1,
+                    num_workers=config.model.dataloader_workers,
+                )
+                predictions = t.cast(
+                    list[ProbsType],
+                    self.trainer.predict(self.module, dataloaders=[dataloader]),
+                )
+
+            assert len(req.query) == len(predictions)
+
+            for query, probabilities in zip(req.query, predictions):
+                prediction: entailment_pb2.EntailmentType.ValueType = max(
+                    probabilities, key=probabilities.get  # type: ignore
+                )
+
+                res.entailments.append(
+                    entailment_pb2.Entailment(
+                        type=prediction,
+                        predictions=[
+                            entailment_pb2.EntailmentPrediction(
+                                probability=probability, type=prediction
+                            )
+                            for prediction, probability in probabilities.items()
+                        ],
+                        premise_id=query.premise_id,
+                        claim_id=query.claim_id,
+                    )
+                )
+        except Exception as ex:
+            arg_services.handle_except(ex, ctx)
 
         return res
 
