@@ -31,7 +31,7 @@ class EntailmentModule(LightningModule):
         # The predict phase does not have a label, this is just checked to be sure here.
         assert y is not None
 
-        output: SequenceClassifierOutput = self.model(**x)
+        output: SequenceClassifierOutput = self(x)
         logits = output.logits
         predictions = logits.argmax(dim=1)
 
@@ -57,10 +57,9 @@ class EntailmentModule(LightningModule):
 
     def predict_step(self, batch: BatchType, batch_idx: int):
         x, _ = batch
-        output: SequenceClassifierOutput = self.model(**x)
+        output: SequenceClassifierOutput = self(x)
         probabilities: list[float] = F.softmax(output.logits, dim=1).flatten().tolist()
 
-        # TODO: Enum auto values start from index 1, but lists start from 0
         return {enum: probabilities[label.value] for label, enum in label2proto.items()}
 
     def configure_optimizers(self):
