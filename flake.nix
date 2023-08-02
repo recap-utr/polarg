@@ -26,21 +26,24 @@
       }: let
         python = pkgs.python310;
         poetry = pkgs.poetry;
-        upload = pkgs.writeShellApplication {
-          name = "upload";
-          text = ''
-            exec ${lib.getExe pkgs.rsync} \
-              --progress \
-              --archive \
-              --delete \
-              --include-from ".rsyncinclude" \
-              --exclude-from ".gitignore" \
-              --exclude ".git" \
-              ./ \
-              wi2gpu:recap-utr/argument-nli
-          '';
-        };
       in {
+        apps.upload = {
+          type = "app";
+          program = lib.getExe (pkgs.writeShellApplication {
+            name = "upload";
+            text = ''
+              exec ${lib.getExe pkgs.rsync} \
+                --progress \
+                --archive \
+                --delete \
+                --include-from ".rsyncinclude" \
+                --exclude-from ".gitignore" \
+                --exclude ".git" \
+                ./ \
+                wi2gpu:recap-utr/argument-nli
+            '';
+          });
+        };
         packages = {
           default = poetry2nix.legacyPackages.${system}.mkPoetryApplication {
             inherit python;
@@ -49,7 +52,7 @@
           };
         };
         devShells.default = pkgs.mkShell {
-          packages = [poetry python upload];
+          packages = [poetry python];
           POETRY_VIRTUALENVS_IN_PROJECT = true;
           LD_LIBRARY_PATH = with pkgs; lib.makeLibraryPath [stdenv.cc.cc zlib "/run/opengl-driver"];
           shellHook = ''
