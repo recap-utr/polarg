@@ -14,5 +14,5 @@ include_neutral = true
 dataset_path = "data"
 dataset_pattern = "*.pickle"
 warmup_steps = 10
-max_epochs = 5
+max_epochs = 4
 learning_rate = 0.00002
