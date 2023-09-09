@@ -50,12 +50,12 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
                 annotations.append(Annotation(premise, claim, None))
 
             try:
-                model_type = req.extras["model"]
+                openai_model = req.extras["openai_model"]
             except ValueError:
-                model_type = None
+                openai_model = None
 
-            if model_type == "openai":
-                predictions = asyncio.run(openai.predict(annotations))
+            if isinstance(openai_model, str):
+                predictions = asyncio.run(openai.predict(annotations, openai_model))
 
             else:
                 dataloader = DataLoader(

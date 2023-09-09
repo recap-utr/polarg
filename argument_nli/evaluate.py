@@ -6,7 +6,7 @@ import arguebuf
 import grpc
 import networkx as nx
 import typer
-from arg_services.mining.v1beta import adu_pb2, entailment_pb2, entailment_pb2_grpc
+from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from sklearn import metrics
 
 from argument_nli.config import config
@@ -24,25 +24,21 @@ scheme2prediction: dict[
 
 
 @app.command()
-def main(address: str, path: Path, pattern: str):
+def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] = None):
     graphs = [arguebuf.load.file(file) for file in path.glob(pattern)]
 
     channel = grpc.insecure_channel(address)
     client = entailment_pb2_grpc.EntailmentServiceStub(channel)
 
-    predicted_labels = []
-    true_labels = []
+    true_labels: list[entailment_pb2.EntailmentType.ValueType] = []
+    req = entailment_pb2.EntailmentsRequest(language="en")
 
-    for graph in graphs:
-        req = entailment_pb2.EntailmentsRequest(
-            language="en",
-            adus={
-                node.id: adu_pb2.Segment(text=node.plain_text)
-                for node in graph.atom_nodes.values()
-            },
-        )
-        # TODO: add model selection
-        # req.extras["model"] = "openai"
+    if openai_model:
+        req.extras["openai_model"] = openai_model
+
+    for i, graph in enumerate(graphs):
+        for node in graph.atom_nodes.values():
+            req.adus[f"{i}-{node.id}"].text = node.plain_text
 
         for scheme_node in graph.scheme_nodes.values():
             for claim, premise in itertools.product(
@@ -57,15 +53,10 @@ def main(address: str, path: Path, pattern: str):
                 ):
                     req.query.append(
                         entailment_pb2.EntailmentQuery(
-                            premise_id=premise.id, claim_id=claim.id
+                            premise_id=f"{i}-{premise.id}", claim_id=f"{i}-{claim.id}"
                         )
                     )
-                    true_labels.append(
-                        scheme2prediction.get(
-                            type(scheme_node.scheme),
-                            entailment_pb2.EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
-                        )
-                    )
+                    true_labels.append(scheme2prediction[type(scheme_node.scheme)])
 
         if config.model.include_neutral:
             nx_graph = arguebuf.dump.networkx(graph).to_undirected()
@@ -85,16 +76,16 @@ def main(address: str, path: Path, pattern: str):
                 ):
                     req.query.append(
                         entailment_pb2.EntailmentQuery(
-                            premise_id=graph.atom_nodes[node1].id,
-                            claim_id=graph.atom_nodes[node2].id,
+                            premise_id=f"{i}-{graph.atom_nodes[node1].id}",
+                            claim_id=f"{i}-{graph.atom_nodes[node2].id}",
                         )
                     )
                     true_labels.append(
                         entailment_pb2.EntailmentType.ENTAILMENT_TYPE_NEUTRAL
                     )
 
-        res = client.Entailments(req)
-        predicted_labels.extend(entailment.type for entailment in res.entailments)
+    res = client.Entailments(req)
+    predicted_labels = [entailment.type for entailment in res.entailments]
 
     labels = sorted(set(predicted_labels).union(true_labels))
 

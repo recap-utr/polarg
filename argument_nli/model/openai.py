@@ -27,7 +27,7 @@ async def _fetch_openai_chat(*args, **kwargs) -> t.Any:
 
 
 async def predict(
-    annotations: list[Annotation],
+    annotations: list[Annotation], model: str
 ) -> list[dict[EntailmentType.ValueType, float]]:
     predictions = []
 
@@ -55,7 +55,7 @@ async def predict(
         ]
 
         response = await _fetch_openai_chat(
-            model="gpt-3.5-turbo-0613",
+            model=model,
             messages=messages,
             functions=[{"name": "predict_entailment", "parameters": schema}],
             function_call={"name": "predict_entailment"},
