@@ -68,6 +68,7 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
                     self.trainer.predict(self.module, dataloaders=[dataloader]),
                 )
 
+            assert predictions is not None
             assert len(req.query) == len(predictions)
 
             for query, probabilities in zip(req.query, predictions):
