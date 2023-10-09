@@ -1,17 +1,13 @@
 import json
-import typing as t
 from pathlib import Path
 
-import backoff
-import openai
 from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam as ChatMessage
 
 from argument_nli.model.annotation import Annotation
 
-
-class ChatMessage(t.TypedDict):
-    role: t.Literal["system", "user", "assistant"]
-    content: str
+client = AsyncOpenAI()
 
 
 type_map = {
@@ -19,11 +15,6 @@ type_map = {
     "attack": EntailmentType.ENTAILMENT_TYPE_CONTRADICTION,
     "neutral": EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
 }
-
-
-@backoff.on_exception(backoff.expo, openai.OpenAIError, max_tries=10)
-async def _fetch_openai_chat(*args, **kwargs) -> t.Any:
-    return await openai.ChatCompletion.acreate(*args, **kwargs)
 
 
 async def predict(
@@ -42,7 +33,8 @@ async def predict(
                     "You are a helpful assistant that predicts the relation/entailment"
                     " between the premise and the claim of an argument. You shall"
                     " predict whether the premise supports or attacks the claim or has"
-                    " a neutral relation to it."
+                    " a neutral relation to it. Provide exactly three predictions, one"
+                    " for each entailment type."
                 ),
             },
             {
@@ -54,14 +46,17 @@ async def predict(
             },
         ]
 
-        response = await _fetch_openai_chat(
+        response = await client.chat.completions.create(
             model=model,
             messages=messages,
             functions=[{"name": "predict_entailment", "parameters": schema}],
             function_call={"name": "predict_entailment"},
         )
 
-        result = json.loads(response.choices[0].message.function_call.arguments)
+        function_call = response.choices[0].message.function_call
+        assert function_call is not None
+
+        result = json.loads(function_call.arguments)
         probs: dict[EntailmentType.ValueType, float] = {
             type_map[result["entailment_type"]]: result["probability"]
             for result in result["entailments"]
