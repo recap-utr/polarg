@@ -40,7 +40,7 @@
                 --exclude-from ".gitignore" \
                 --exclude ".git" \
                 ./ \
-                wi2gpu:recap-utr/argument-nli
+                wi2gpu:recap-utr/argent
             '';
           });
         };

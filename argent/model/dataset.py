@@ -7,8 +7,8 @@ from torch.utils.data import DataLoader, Dataset
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 from transformers.tokenization_utils import BatchEncoding
 
-from argument_nli.config import config
-from argument_nli.model.annotation import Annotation, AnnotationDataset, EntailmentLabel
+from argent.config import config
+from argent.model.annotation import Annotation, AnnotationDataset, EntailmentLabel
 
 BatchTypeX = t.Dict[str, torch.Tensor]
 BatchTypeY = t.Union[torch.Tensor, int]

@@ -11,8 +11,8 @@ import networkx as nx
 import typer
 from ordered_set import OrderedSet
 
-from argument_nli.config import config
-from argument_nli.model import Annotation, AnnotationDataset, EntailmentLabel
+from argent.config import config
+from argent.model import Annotation, AnnotationDataset, EntailmentLabel
 
 app = typer.Typer()
 

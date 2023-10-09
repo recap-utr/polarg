@@ -9,8 +9,8 @@ from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from lightning import Trainer
 from torch.utils.data import DataLoader
 
-from argument_nli.config import config
-from argument_nli.model import Annotation, EntailmentDataset, EntailmentModule, openai
+from argent.config import config
+from argent.model import Annotation, EntailmentDataset, EntailmentModule, openai
 
 ProbsType = dict[entailment_pb2.EntailmentType.ValueType, float]
 

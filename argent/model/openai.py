@@ -5,7 +5,7 @@ from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam as ChatMessage
 
-from argument_nli.model.annotation import Annotation
+from argent.model.annotation import Annotation
 
 client = AsyncOpenAI()
 
