@@ -30,7 +30,7 @@ class EntailmentDataModule(LightningDataModule):
         ):
             current_data = AnnotationDataset.open(file)
 
-            if not config.model.include_neutral:
+            if not config.model.train.include_neutral:
                 current_data.remove_neutral()
 
             self.dataset.update(current_data)

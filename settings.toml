@@ -2,13 +2,15 @@
 random_state = 0
 neutral_distance = 25
 
+[evaluate]
+include_neutral = false
+
 [model]
 path = "data/model.pt"
 pretrained = "microsoft/deberta-v3-base"
 batch_size = 16
 max_sequence_length = 512
 dataloader_workers = 4
-include_neutral = true
 
 [model.train]
 dataset_path = "data"
@@ -16,3 +18,4 @@ dataset_pattern = "*.pickle"
 warmup_steps = 10
 max_epochs = 4
 learning_rate = 0.00002
+include_neutral = true

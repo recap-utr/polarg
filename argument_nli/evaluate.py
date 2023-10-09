@@ -58,7 +58,7 @@ def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] =
                     )
                     true_labels.append(scheme2prediction[type(scheme_node.scheme)])
 
-        if config.model.include_neutral:
+        if config.evaluate.include_neutral:
             nx_graph = arguebuf.dump.networkx(graph).to_undirected()
             dist = dict(
                 nx.all_pairs_shortest_path_length(
