@@ -22,7 +22,7 @@ lightning = "^2.0.5"
 torchmetrics = "^1.0.1"
 sentencepiece = "^0.1.99"
 wandb = "^0.15.5"
-deepspeed = "^0.10.0"
+ordered-set = "^4.1.0"
 
 
 [tool.poetry.dev-dependencies]
