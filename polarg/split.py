@@ -6,7 +6,7 @@ from pathlib import Path
 import typer
 from sklearn.model_selection import train_test_split
 
-from argent.config import config
+from polarg.config import config
 
 app = typer.Typer()
 

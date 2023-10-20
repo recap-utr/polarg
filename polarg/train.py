@@ -2,15 +2,15 @@ import transformers.utils.logging as transformers_logging
 from lightning import Trainer
 from lightning.pytorch.loggers.wandb import WandbLogger
 
-from argent.config import config
-from argent.model import EntailmentDataModule, EntailmentModule
+from polarg.config import config
+from polarg.model import EntailmentDataModule, EntailmentModule
 
 transformers_logging.set_verbosity_error()
 
 
 datamodule = EntailmentDataModule()
 
-logger = WandbLogger(project="argent")
+logger = WandbLogger(project="polarg")
 trainer = Trainer(
     logger=logger,
     max_epochs=config.model.train.max_epochs,

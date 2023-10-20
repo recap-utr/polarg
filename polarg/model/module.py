@@ -6,9 +6,9 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.auto.modeling_auto import AutoModelForSequenceClassification
 from transformers.optimization import get_linear_schedule_with_warmup
 
-from argent.config import config
-from argent.model.annotation import label2proto
-from argent.model.dataset import BatchType, BatchTypeX
+from polarg.config import config
+from polarg.model.annotation import label2proto
+from polarg.model.dataset import BatchType, BatchTypeX
 
 
 class EntailmentModule(LightningModule):

@@ -9,7 +9,7 @@ import typer
 from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from sklearn import metrics
 
-from argent.config import config
+from polarg.config import config
 
 app = typer.Typer()
 

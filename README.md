@@ -1,1 +1,1 @@
-# argent (ARGument ENTailment)
+# polarg (Polarity of Arguments)

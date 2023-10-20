@@ -11,8 +11,8 @@ import networkx as nx
 import typer
 from ordered_set import OrderedSet
 
-from argent.config import config
-from argent.model import Annotation, AnnotationDataset, EntailmentLabel
+from polarg.config import config
+from polarg.model import Annotation, AnnotationDataset, EntailmentLabel
 
 app = typer.Typer()
 
