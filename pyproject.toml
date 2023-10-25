@@ -14,7 +14,7 @@ lxml = "^4.9.3"
 typer = "^0.9.0"
 pandas = "^2.0.3"
 arg-services = "^1.4.0"
-arguebuf = "^2.1.1"
+arguebuf = "^2.3.0"
 scikit-learn = "^1.3.0"
 stableset = "^5.2.1"
 openai = { version = "^1.0.0b1", allow-prereleases = true }

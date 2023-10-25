@@ -7,11 +7,9 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import arguebuf
-import networkx as nx
 import typer
 from ordered_set import OrderedSet
 
-from polarg.config import config
 from polarg.model import Annotation, AnnotationDataset, EntailmentLabel
 
 app = typer.Typer()
@@ -68,7 +66,7 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
                 typer.echo(traceback.print_exc())
                 continue
 
-            non_neutral_annotations = OrderedSet([])
+            annotations = OrderedSet([])
 
             for scheme_node in graph.scheme_nodes.values():
                 for premise, claim in itertools.product(
@@ -80,70 +78,20 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
                         and isinstance(premise, arguebuf.AtomNode)
                         and isinstance(claim, arguebuf.AtomNode)
                     ):
-                        non_neutral_annotations.add(
+                        annotations.add(
                             Annotation(premise.plain_text, claim.plain_text, label)
                         )
 
-            neutral_annotations = OrderedSet([])
-
-            # To speed up the computation for neutral samples, we use networkx
-            nx_graph = arguebuf.dump.networkx(graph).to_undirected()
-            dist = dict(
-                nx.all_pairs_shortest_path_length(
-                    nx_graph, cutoff=config.convert.neutral_distance
-                )
-            )
-            atom_nodes = set(graph.atom_nodes.keys())
-
-            # distance in graph > cutoff (see nx.all_pairs_shortest_path_length)
-            for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
-                if (
-                    node1 in atom_nodes
-                    and node2 in atom_nodes
-                    and (node2 not in dist[node1])
-                ):
-                    neutral_annotations.add(
-                        Annotation(
-                            graph.atom_nodes[node1].plain_text,
-                            graph.atom_nodes[node2].plain_text,
-                            EntailmentLabel.NEUTRAL,
+            for atom_node in graph.atom_nodes.values():
+                for sibling in graph.sibling_nodes(atom_node):
+                    if isinstance(sibling, arguebuf.AtomNode):
+                        annotations.add(
+                            Annotation(
+                                atom_node.plain_text,
+                                sibling.plain_text,
+                                EntailmentLabel.NEUTRAL,
+                            )
                         )
-                    )
-
-            # leaf nodes only need distance > 3
-            # otherwise, small corpora like araucaria would have no neutral samples
-            # if not neutral_annotations:
-            #     for node1, node2 in itertools.product(nx_graph.nodes, nx_graph.nodes):
-            #         if (
-            #             node1 in atom_nodes
-            #             and node2 in atom_nodes
-            #             and (
-            #                 len(graph.incoming_nodes(node1)) == 0
-            #                 and len(graph.incoming_nodes(node2)) == 0
-            #                 and dist[node1][node2] > 3
-            #             )
-            #         ):
-            #             neutral_annotations.add(
-            #                 Annotation(
-            #                     graph.atom_nodes[node1].plain_text,
-            #                     graph.atom_nodes[node2].plain_text,
-            #                     EntailmentLabel.NEUTRAL,
-            #                 )
-            #             )
-
-            # if len(neutral_annotations) > len(non_neutral_annotations):
-            #     neutral_annotations = t.cast(
-            #         t.List[Annotation],
-            #         resample(
-            #             neutral_annotations,
-            #             replace=False,
-            #             random_state=config.convert.random_state,
-            #             n_samples=len(non_neutral_annotations),
-            #         ),
-            #     )
-
-            annotations.update(non_neutral_annotations)
-            annotations.update(neutral_annotations)
 
     return annotations
 
