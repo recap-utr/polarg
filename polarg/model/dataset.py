@@ -4,8 +4,7 @@ from pathlib import Path
 import torch
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
-from transformers.models.auto.tokenization_auto import AutoTokenizer
-from transformers.tokenization_utils import BatchEncoding
+from transformers import AutoTokenizer, BatchEncoding
 
 from polarg.config import config
 from polarg.model.annotation import Annotation, AnnotationDataset, EntailmentLabel
