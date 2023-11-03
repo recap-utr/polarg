@@ -6,9 +6,9 @@ from pathlib import Path
 import typer
 from sklearn.model_selection import train_test_split
 
-from polarg.config import config
-
 app = typer.Typer()
+
+RANDOM_STATE = 0
 
 
 @app.command()
@@ -25,12 +25,12 @@ def split(input: Path, pattern: str, output: Path, training_size: float = 0.8):
     training_files, test_files = train_test_split(
         files,
         train_size=training_size,
-        random_state=config.convert.random_state,
+        random_state=RANDOM_STATE,
     )
     training_files, validation_files = train_test_split(
         training_files,
         train_size=training_size,
-        random_state=config.convert.random_state,
+        random_state=RANDOM_STATE,
     )
     file: Path
 
