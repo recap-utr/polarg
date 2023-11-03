@@ -83,7 +83,8 @@ def _argument_graph(files: t.Collection[Path]) -> OrderedSet[Annotation]:
                         )
 
             for atom_node in graph.atom_nodes.values():
-                for sibling in graph.sibling_nodes(atom_node):
+                # scheme nodes are also counted as a level, so it needs to be a multiple of 2
+                for sibling in graph.sibling_nodes(atom_node, max_levels=2):
                     if isinstance(sibling, arguebuf.AtomNode):
                         annotations.add(
                             Annotation(
