@@ -53,7 +53,7 @@
           };
         };
         devShells.default = pkgs.mkShell {
-          packages = [poetry python];
+          packages = [poetry python self'.packages.upload];
           POETRY_VIRTUALENVS_IN_PROJECT = true;
           LD_LIBRARY_PATH = with pkgs; lib.makeLibraryPath [stdenv.cc.cc zlib "/run/opengl-driver"];
           shellHook = ''
