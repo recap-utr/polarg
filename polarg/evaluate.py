@@ -7,7 +7,9 @@ import typer
 from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from sklearn import metrics
 
+from polarg.config import config
 from polarg.model.annotation import (
+    EntailmentLabel,
     contexttype_to_proto,
     graph_annotations,
     label_to_proto,
@@ -34,18 +36,29 @@ def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] =
             req.adus[f"{i}-{node.id}"].text = node.plain_text
 
         for annotation in graph_annotations(graph):
+            if (
+                annotation.label == EntailmentLabel.NEUTRAL
+                and not config.evaluate.include_neutral
+            ):
+                continue
+
+            context: list[entailment_pb2.EntailmentContext] | None = None
+
+            if config.evaluate.include_context:
+                context = [
+                    entailment_pb2.EntailmentContext(
+                        adu_id=f"{i}-{item.adu_id}",
+                        type=contexttype_to_proto[item.type],
+                        weight=item.weight,
+                    )
+                    for item in annotation.context
+                ]
+
             req.query.append(
                 entailment_pb2.EntailmentQuery(
                     premise_id=f"{i}-{annotation.premise_id}",
                     claim_id=f"{i}-{annotation.claim_id}",
-                    context=[
-                        entailment_pb2.EntailmentContext(
-                            adu_id=f"{i}-{item.adu_id}",
-                            type=contexttype_to_proto[item.type],
-                            weight=item.weight,
-                        )
-                        for item in annotation.context
-                    ],
+                    context=context,
                 )
             )
             assert annotation.label is not None

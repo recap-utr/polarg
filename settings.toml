@@ -1,5 +1,6 @@
 [evaluate]
 include_neutral = false
+include_context = false
 
 [model]
 path = "data/model.pt"
