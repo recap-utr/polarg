@@ -3,14 +3,14 @@ include_neutral = false
 
 [model]
 path = "data/model.pt"
-pretrained = "microsoft/deberta-v3-base"
+pretrained = "meta-llama/Llama-2-7b-hf"
 batch_size = 16
 max_sequence_length = 512
 dataloader_workers = 4
 
 [model.train]
 dataset_path = "data"
-dataset_pattern = "*.pickle"
+dataset_pattern = "*.json"
 warmup_steps = 10
 max_epochs = 4
 learning_rate = 0.00002

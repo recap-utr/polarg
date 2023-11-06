@@ -86,7 +86,9 @@ class EntailmentDataset(Dataset):
 
     def __getitem__(self, k: int) -> BatchType:
         ann = self.annotations[k]
-        encoding = self._tokenize(ann.premise, ann.claim)
+        premise = ann.adus[ann.premise_id]
+        claim = ann.adus[ann.claim_id]
+        encoding = self._tokenize(premise, claim)
 
         return (
             {key: value.flatten() for key, value in encoding.items()},

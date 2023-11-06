@@ -23,16 +23,18 @@ type_map = {
 #     "gpt-3.5-turbo-16k": 16385,
 # }
 
+with Path("./openai_schema.json").open("r") as fp:
+    schema = json.load(fp)
+
 
 async def predict(
     annotations: list[Annotation], model: str
 ) -> list[dict[EntailmentType.ValueType, float]]:
     predictions = []
 
-    with Path("./openai_schema.json").open("r") as fp:
-        schema = json.load(fp)
-
     for annotation in annotations:
+        premise = annotation.adus[annotation.premise_id]
+        claim = annotation.adus[annotation.claim_id]
         messages: list[ChatMessage] = [
             {
                 "role": "system",
@@ -47,8 +49,8 @@ async def predict(
             {
                 "role": "user",
                 "content": f"""
-                    Premise: {annotation.premise}.
-                    Claim: {annotation.claim}.
+                    Premise: {premise}.
+                    Claim: {claim}.
                 """,
             },
         ]

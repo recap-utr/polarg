@@ -1,4 +1,4 @@
-from .annotation import Annotation, AnnotationDataset, EntailmentLabel, label2proto
+from .annotation import Annotation, AnnotationDataset, EntailmentLabel, label_to_proto
 from .dataset import BatchType, EntailmentDataModule, EntailmentDataset
 from .module import EntailmentModule
 
@@ -10,5 +10,5 @@ __all__ = (
     "EntailmentDataset",
     "BatchType",
     "EntailmentModule",
-    "label2proto",
+    "label_to_proto",
 )

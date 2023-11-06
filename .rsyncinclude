@@ -1,2 +1,2 @@
-data/*.pickle
+data/*.json
 /.env

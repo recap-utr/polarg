@@ -4,13 +4,19 @@ import typing as t
 
 import arg_services
 import grpc
+import immutables
 import typer
 from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from lightning import Trainer
 from torch.utils.data import DataLoader
 
 from polarg.config import config
-from polarg.model import Annotation, EntailmentDataset, EntailmentModule, openai
+from polarg.model import EntailmentDataset, EntailmentModule, openai
+from polarg.model.annotation import (
+    Annotation,
+    AnnotationContext,
+    contexttype_from_proto,
+)
 
 ProbsType = dict[entailment_pb2.EntailmentType.ValueType, float]
 
@@ -45,9 +51,24 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
             predictions: list[ProbsType] = []
 
             for query in req.query:
-                premise = req.adus[query.premise_id].text
-                claim = req.adus[query.claim_id].text
-                annotations.append(Annotation(premise, claim, None))
+                context = tuple(
+                    AnnotationContext(
+                        c.adu_id, c.weight, contexttype_from_proto[c.type]
+                    )
+                    for c in query.context
+                )
+                adus = immutables.Map(
+                    {adu_id: adu.text for adu_id, adu in req.adus.items()}
+                )
+                annotations.append(
+                    Annotation(
+                        query.premise_id,
+                        query.claim_id,
+                        context,
+                        adus,
+                        None,
+                    )
+                )
 
             try:
                 openai_model = req.extras["openai_model"]
@@ -73,7 +94,8 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
 
             for query, probabilities in zip(req.query, predictions):
                 prediction: entailment_pb2.EntailmentType.ValueType = max(
-                    probabilities, key=probabilities.get  # type: ignore
+                    probabilities,
+                    key=probabilities.get,  # type: ignore
                 )
 
                 res.entailments.append(
