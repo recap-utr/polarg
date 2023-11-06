@@ -7,8 +7,11 @@ import typer
 from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from sklearn import metrics
 
-from polarg.convert import graph_annotations
-from polarg.model.annotation import contexttype_to_proto, label_to_proto
+from polarg.model.annotation import (
+    contexttype_to_proto,
+    graph_annotations,
+    label_to_proto,
+)
 
 app = typer.Typer()
 

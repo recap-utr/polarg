@@ -9,9 +9,20 @@ max_sequence_length = 512
 dataloader_workers = 4
 
 [model.train]
-dataset_path = "data"
-dataset_pattern = "*.json"
 warmup_steps = 10
 max_epochs = 4
 learning_rate = 0.00002
+
+[model.dataset]
 include_neutral = true
+path = "data"
+patterns = [
+    "kialo/*.txt",
+    "kialo-nilesc/*.txt",
+    "kialo-graphnli/*.json",
+    "*.microtexts =/xml",
+    "microtexts-v2/*.xml",
+    "persuasive-essays/*.ann",
+    "twitter-us2020/*.json",
+    "us-2016/*.json",
+]

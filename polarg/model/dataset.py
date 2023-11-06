@@ -1,5 +1,4 @@
 import typing as t
-from pathlib import Path
 
 import torch
 from lightning import LightningDataModule
@@ -7,7 +6,13 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer, BatchEncoding
 
 from polarg.config import config
-from polarg.model.annotation import Annotation, AnnotationDataset, EntailmentLabel
+from polarg.model.annotation import (
+    Annotation,
+    AnnotationDataset,
+    EntailmentLabel,
+    convert_arguebuf,
+    load_dataset,
+)
 
 BatchTypeX = t.Dict[str, torch.Tensor]
 BatchTypeY = t.Union[torch.Tensor, int]
@@ -19,20 +24,36 @@ dataloader_args = {
 }
 
 
+def _parse_annotations(annotations: t.Iterable[Annotation]) -> tuple[Annotation, ...]:
+    if config.model.dataset.include_neutral:
+        return tuple(annotations)
+
+    return tuple(
+        annotation
+        for annotation in annotations
+        if annotation.label != EntailmentLabel.NEUTRAL
+    )
+
+
 class EntailmentDataModule(LightningDataModule):
     def __init__(self):
         super().__init__()
-        self.dataset = AnnotationDataset()
 
-        for file in Path(config.model.train.dataset_path).glob(
-            config.model.train.dataset_pattern
-        ):
-            current_data = AnnotationDataset.open(file)
+        train: list[Annotation] = []
+        test: list[Annotation] = []
+        validation: list[Annotation] = []
 
-            if not config.model.train.include_neutral:
-                current_data.remove_neutral()
+        for pattern in config.model.dataset.patterns:
+            dataset = load_dataset(config.model.dataset.path, pattern, convert_arguebuf)
+            train.extend(dataset[0])
+            test.extend(dataset[1])
+            validation.extend(dataset[2])
 
-            self.dataset.update(current_data)
+        self.dataset = AnnotationDataset(
+            train=_parse_annotations(train),
+            test=_parse_annotations(test),
+            validation=_parse_annotations(validation),
+        )
 
     def train_dataloader(self):
         return DataLoader(
