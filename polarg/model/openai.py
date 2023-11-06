@@ -10,6 +10,10 @@ from polarg.model.annotation import Annotation
 client = AsyncOpenAI()
 
 
+# TODO: Add optional memory by appending responses until context size is reached
+# TODO: Respect "config.evaluateinclude_neutral" setting by altering the prompt and the function calling scheme
+
+
 type_map = {
     "support": EntailmentType.ENTAILMENT_TYPE_ENTAILMENT,
     "attack": EntailmentType.ENTAILMENT_TYPE_CONTRADICTION,
@@ -35,6 +39,22 @@ async def predict(
     for annotation in annotations:
         premise = annotation.adus[annotation.premise_id]
         claim = annotation.adus[annotation.claim_id]
+
+        user_msg = f"""
+            Premise: {premise}.
+            Claim: {claim}.
+        """
+
+        if len(annotation.context) > 0:
+            annotation_context = "\n".join(
+                annotation.adus[ctx.adu_id] for ctx in annotation.context
+            )
+            user_msg += f"""
+
+                The premise and the claim have the following neighbors in the conversation:
+                {annotation_context}
+            """
+
         messages: list[ChatMessage] = [
             {
                 "role": "system",
@@ -48,10 +68,7 @@ async def predict(
             },
             {
                 "role": "user",
-                "content": f"""
-                    Premise: {premise}.
-                    Claim: {claim}.
-                """,
+                "content": user_msg,
             },
         ]
 
