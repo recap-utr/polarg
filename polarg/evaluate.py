@@ -25,15 +25,17 @@ def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] =
     channel = grpc.insecure_channel(address)
     client = entailment_pb2_grpc.EntailmentServiceStub(channel)
 
+    predicted_labels: list[entailment_pb2.EntailmentType.ValueType] = []
     true_labels: list[entailment_pb2.EntailmentType.ValueType] = []
-    req = entailment_pb2.EntailmentsRequest(language="en")
 
-    if openai_model:
-        req.extras["openai_model"] = openai_model
+    for graph in graphs:
+        req = entailment_pb2.EntailmentsRequest(language="en")
 
-    for i, graph in enumerate(graphs):
+        if openai_model:
+            req.extras["openai_model"] = openai_model
+
         for node in graph.atom_nodes.values():
-            req.adus[f"{i}-{node.id}"].text = node.plain_text
+            req.adus[node.id].text = node.plain_text
 
         for annotation in graph_annotations(graph):
             if (
@@ -47,7 +49,7 @@ def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] =
             if config.evaluate.include_context:
                 context = [
                     entailment_pb2.EntailmentContext(
-                        adu_id=f"{i}-{item.adu_id}",
+                        adu_id=item.adu_id,
                         type=contexttype_to_proto[item.type],
                         weight=item.weight,
                     )
@@ -56,16 +58,16 @@ def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] =
 
             req.query.append(
                 entailment_pb2.EntailmentQuery(
-                    premise_id=f"{i}-{annotation.premise_id}",
-                    claim_id=f"{i}-{annotation.claim_id}",
+                    premise_id=annotation.premise_id,
+                    claim_id=annotation.claim_id,
                     context=context,
                 )
             )
             assert annotation.label is not None
             true_labels.append(label_to_proto[annotation.label])
 
-    res = client.Entailments(req)
-    predicted_labels = [entailment.type for entailment in res.entailments]
+        res = client.Entailments(req)
+        predicted_labels.extend(entailment.type for entailment in res.entailments)
 
     labels = sorted(set(predicted_labels).union(true_labels))
 
