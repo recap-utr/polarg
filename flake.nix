@@ -44,7 +44,9 @@
                 --progress \
                 --archive \
                 --delete \
-                --include-from ".rsyncinclude" \
+                --exclude "data/*.pt" \
+                --include "data/*" \
+                --include "/.env" \
                 --exclude-from ".gitignore" \
                 --exclude ".git" \
                 ./ \
