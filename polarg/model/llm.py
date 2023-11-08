@@ -3,25 +3,31 @@ import json
 from collections import abc
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
+import httpx
 from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam as ChatMessage
 
-from polarg.config import config
+from polarg.model import llama
 from polarg.model.annotation import Annotation
 
-client = AsyncOpenAI()
-
-
-# TODO: Add optional memory by appending responses until context size is reached. Needs rework of async feature since responses are retrieved in parallel
+client = AsyncOpenAI(
+    http_client=httpx.AsyncClient(
+        http2=True,
+        timeout=httpx.Timeout(timeout=30, connect=5),
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    ),
+    max_retries=3,
+)
 
 
 polarity_map = {
     "support": EntailmentType.ENTAILMENT_TYPE_ENTAILMENT,
     "attack": EntailmentType.ENTAILMENT_TYPE_CONTRADICTION,
     "neutral": EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
+    None: EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED,
 }
 
 ModelName = Literal["gpt-3.5-turbo-1106", "gpt-4-1106-preview", "gpt-4-0613"]
@@ -73,27 +79,49 @@ def generate_system_message(include_neutral: bool) -> str:
 Strategy = Literal["isolated", "sequential", "batched"]
 
 
+class Options(TypedDict):
+    strategy: Strategy
+    use_llama: bool
+    include_neutral: bool
+
+
 async def predict(
-    annotations: abc.Sequence[Annotation], strategy: Strategy
+    annotations: abc.Sequence[Annotation], options: Options
 ) -> list[EntailmentType.ValueType]:
     predictions: list[EntailmentType.ValueType] | None = None
 
-    if strategy == "isolated":
+    if options["strategy"] == "isolated":
         predictions = await asyncio.gather(
-            *(predict_isolated(annotation) for annotation in annotations)
+            *(predict_isolated(annotation, options) for annotation in annotations)
         )
-    elif strategy == "sequential":
-        predictions = await predict_sequential(annotations)
-    elif strategy == "batched":
-        predictions = await predict_batched(annotations)
+    elif options["strategy"] == "sequential":
+        predictions = await predict_sequential(annotations, options)
+    elif options["strategy"] == "batched":
+        predictions = await predict_batched(annotations, options)
 
     assert predictions is not None
 
     return predictions
 
 
+async def chat_response(
+    messages: list[ChatMessage], use_llama: bool, openai_model: ModelName
+) -> str:
+    if use_llama:
+        return llama.generate(messages)
+    else:
+        response = await client.chat.completions.create(
+            model=openai_model,
+            messages=messages,
+        )
+
+        response_msg = response.choices[0].message.content
+        assert response_msg is not None
+        return response_msg
+
+
 async def predict_isolated(
-    annotation: Annotation, model: ModelName = "gpt-3.5-turbo-1106"
+    annotation: Annotation, options: Options, model: ModelName = "gpt-3.5-turbo-1106"
 ) -> EntailmentType.ValueType:
     premise = annotation.adus[annotation.premise_id]
     claim = annotation.adus[annotation.claim_id]
@@ -115,7 +143,7 @@ The premise and the claim have the following neighbors in the conversation:
     messages: list[ChatMessage] = [
         {
             "role": "system",
-            "content": generate_system_message(config.evaluate.include_neutral),
+            "content": generate_system_message(options["include_neutral"]),
         },
         {
             "role": "user",
@@ -123,32 +151,31 @@ The premise and the claim have the following neighbors in the conversation:
         },
     ]
 
-    response = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-    )
+    try:
+        res = await chat_response(messages, options["use_llama"], model)
+        prediction = res.lower()
 
-    assistant_content = response.choices[0].message.content
-    assert assistant_content is not None
+        if "support" in prediction:
+            return EntailmentType.ENTAILMENT_TYPE_ENTAILMENT
+        elif "attack" in prediction:
+            return EntailmentType.ENTAILMENT_TYPE_CONTRADICTION
 
-    prediction = assistant_content.lower()
+    except OpenAIError:
+        pass
 
-    if "support" in prediction:
-        return EntailmentType.ENTAILMENT_TYPE_ENTAILMENT
-    elif "attack" in prediction:
-        return EntailmentType.ENTAILMENT_TYPE_CONTRADICTION
-
-    return EntailmentType.ENTAILMENT_TYPE_NEUTRAL
+    return EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
 
 
 async def predict_sequential(
-    annotations: abc.Sequence[Annotation], model: ModelName = "gpt-3.5-turbo-1106"
+    annotations: abc.Sequence[Annotation],
+    options: Options,
+    model: ModelName = "gpt-3.5-turbo-1106",
 ) -> list[EntailmentType.ValueType]:
     predictions: list[EntailmentType.ValueType] = []
     messages: list[ChatMessage] = [
         {
             "role": "system",
-            "content": generate_system_message(config.evaluate.include_neutral),
+            "content": generate_system_message(options["include_neutral"]),
         }
     ]
 
@@ -166,23 +193,21 @@ Claim: {claim}.
             }
         )
 
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-        )
-        assistant_msg = response.choices[0].message
-        assert assistant_msg.content is not None
+        try:
+            res = await chat_response(messages, options["use_llama"], model)
+            prediction = res.lower()
 
-        prediction = assistant_msg.content.lower()
+            if "support" in prediction:
+                predictions.append(EntailmentType.ENTAILMENT_TYPE_ENTAILMENT)
+            elif "attack" in prediction:
+                predictions.append(EntailmentType.ENTAILMENT_TYPE_CONTRADICTION)
+            else:
+                predictions.append(EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED)
 
-        if "support" in prediction:
-            predictions.append(EntailmentType.ENTAILMENT_TYPE_ENTAILMENT)
-        elif "attack" in prediction:
-            predictions.append(EntailmentType.ENTAILMENT_TYPE_CONTRADICTION)
-        else:
-            predictions.append(EntailmentType.ENTAILMENT_TYPE_NEUTRAL)
+            messages.append({"role": "assistant", "content": res})
 
-        messages.append({"role": assistant_msg.role, "content": assistant_msg.content})
+        except OpenAIError:
+            predictions.append(EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED)
 
     return predictions
 
@@ -194,6 +219,7 @@ def batchify(seq: abc.Sequence[Any], n: int):
 
 async def predict_batched(
     annotations: abc.Sequence[Annotation],
+    options: Options,
     model: ModelName = "gpt-3.5-turbo-1106",
     # model: ModelName = "gpt-4-1106-preview",
 ) -> list[EntailmentType.ValueType]:
@@ -205,12 +231,13 @@ async def predict_batched(
         {
             "role": "system",
             "content": f"""
-{generate_system_message(config.evaluate.include_neutral)},
+{generate_system_message(options["include_neutral"])},
 You will be presented with a list of premise-claim pairs containing their text and id encoded as a JSON array.
 Provide exactly one prediction for each of them.
 """,
         }
     ]
+    result_map: dict[tuple[str, str], str] = {}
 
     annotation_pairs = [
         {
@@ -229,44 +256,7 @@ Provide exactly one prediction for each of them.
         }
     )
 
-    response = await client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": "predict_entailment",
-                    "parameters": generate_schema(config.evaluate.include_neutral),
-                },
-            }
-        ],
-        tool_choice={"type": "function", "function": {"name": "predict_entailment"}},
-    )
-
-    tool_calls = response.choices[0].message.tool_calls
-    assert tool_calls is not None
-
-    result = json.loads(tool_calls[0].function.arguments)
-    result_map = _result_to_dict(result)
-
-    missing_pairs = set(annotations_map.keys()).difference(result_map.keys())
-
-    if len(missing_pairs) > 0:
-        messages.append(
-            {"role": "assistant", "content": tool_calls[0].function.arguments}
-        )
-        messages.append(
-            {
-                "role": "user",
-                "content": f"""
-Some pairs are missing from your previous response.
-Please provide predictions for the following pairs:
-{json.dumps(list(missing_pairs))}
-""",
-            }
-        )
-
+    try:
         response = await client.chat.completions.create(
             model=model,
             messages=messages,
@@ -275,7 +265,7 @@ Please provide predictions for the following pairs:
                     "type": "function",
                     "function": {
                         "name": "predict_entailment",
-                        "parameters": generate_schema(config.evaluate.include_neutral),
+                        "parameters": generate_schema(options["include_neutral"]),
                     },
                 }
             ],
@@ -284,14 +274,57 @@ Please provide predictions for the following pairs:
                 "function": {"name": "predict_entailment"},
             },
         )
-
         tool_calls = response.choices[0].message.tool_calls
         assert tool_calls is not None
 
         result = json.loads(tool_calls[0].function.arguments)
         result_map.update(_result_to_dict(result))
 
-    return [polarity_map[result_map.get(key, "neutral")] for key in annotations_map]
+        missing_pairs = set(annotations_map.keys()).difference(result_map.keys())
+
+        if len(missing_pairs) > 0:
+            messages.append(
+                {"role": "assistant", "content": tool_calls[0].function.arguments}
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"""
+Some pairs are missing from your previous response.
+Please provide predictions for the following pairs:
+{json.dumps(list(missing_pairs))}
+""",
+                }
+            )
+
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=[
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "predict_entailment",
+                            "parameters": generate_schema(options["include_neutral"]),
+                        },
+                    }
+                ],
+                tool_choice={
+                    "type": "function",
+                    "function": {"name": "predict_entailment"},
+                },
+            )
+
+            tool_calls = response.choices[0].message.tool_calls
+            assert tool_calls is not None
+
+            result = json.loads(tool_calls[0].function.arguments)
+            result_map.update(_result_to_dict(result))
+
+    except OpenAIError:
+        pass
+
+    return [polarity_map[result_map.get(key)] for key in annotations_map]
 
 
 def _result_to_dict(result: Any) -> dict[tuple[str, str], str]:

@@ -11,7 +11,7 @@ from lightning import Trainer
 from torch.utils.data import DataLoader
 
 from polarg.config import config
-from polarg.model import EntailmentDataset, EntailmentModule, openai
+from polarg.model import EntailmentDataset, EntailmentModule, llm
 from polarg.model.annotation import (
     Annotation,
     AnnotationContext,
@@ -32,7 +32,7 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
             )
             self.trainer = Trainer(accelerator="gpu", logger=False)
         except FileNotFoundError:
-            typer.echo("Model not found, only OpenAI will be available.")
+            typer.echo("Model not found, only LLMs will be available.")
 
     def Entailments(
         self, req: entailment_pb2.EntailmentsRequest, ctx: grpc.ServicerContext
@@ -71,16 +71,12 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
                 )
 
             try:
-                openai_strategy = t.cast(
-                    openai.Strategy | None, req.extras["openai_strategy"]
-                )
+                llm_options = t.cast(llm.Options | None, req.extras["llm_options"])
             except ValueError:
-                openai_strategy = None
+                llm_options = None
 
-            if openai_strategy:
-                predicted_values = asyncio.run(
-                    openai.predict(annotations, openai_strategy)
-                )
+            if llm_options:
+                predicted_values = asyncio.run(llm.predict(annotations, llm_options))
                 predictions = [{val: 1.0} for val in predicted_values]
 
             else:
@@ -134,10 +130,6 @@ def main(address: str):
         address,
         add_services,
         [arg_services.full_service_name(entailment_pb2, "EntailmentService")],
-        options={
-            "grpc.max_send_message_length": -1,
-            "grpc.max_receive_message_length": -1,
-        },
     )
 
 

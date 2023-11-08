@@ -243,7 +243,6 @@ data/*
 *.ipynb
 /sync.sh
 /.vscode/
-/openai_api_key.txt
 /.direnv/
 /lightning_logs/
 /wandb/

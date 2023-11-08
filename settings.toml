@@ -1,7 +1,3 @@
-[evaluate]
-include_neutral = false
-include_context = false
-
 [model]
 path = "data/model.pt"
 pretrained = "meta-llama/Llama-2-7b-hf"

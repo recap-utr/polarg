@@ -27,6 +27,7 @@ peft = "^0.5.0"
 orjson = "^3.9.10"
 mashumaro = "^3.10"
 immutables = "^0.20"
+httpx = {extras = ["http2"], version = "^0.25.1"}
 
 
 [tool.poetry.dev-dependencies]
