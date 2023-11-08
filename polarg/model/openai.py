@@ -211,7 +211,6 @@ Provide exactly one prediction for each of them.
 """,
         }
     ]
-    predictions: list[EntailmentType.ValueType] = []
 
     annotation_pairs = [
         {
@@ -249,17 +248,7 @@ Provide exactly one prediction for each of them.
     assert tool_calls is not None
 
     result = json.loads(tool_calls[0].function.arguments)
-
-    # predictions.extend(
-    #     [
-    #         polarity_map[prediction["polarity_type"]]
-    #         for prediction in result["polarities"]
-    #     ]
-    # )
-    result_map: dict[tuple[str, str], str] = {
-        (item["premise_id"], item["claim_id"]): item["polarity_type"]
-        for item in result["polarities"]
-    }
+    result_map = _result_to_dict(result)
 
     missing_pairs = set(annotations_map.keys()).difference(result_map.keys())
 
@@ -270,8 +259,11 @@ Provide exactly one prediction for each of them.
         messages.append(
             {
                 "role": "user",
-                "content": "The following pairs are missing from the previous response:\n"
-                + json.dumps(list(missing_pairs)),
+                "content": f"""
+Some pairs are missing from your previous response.
+Please provide predictions for the following pairs:
+{json.dumps(list(missing_pairs))}
+""",
             }
         )
 
@@ -293,4 +285,18 @@ Provide exactly one prediction for each of them.
             },
         )
 
-        # TODO
+        tool_calls = response.choices[0].message.tool_calls
+        assert tool_calls is not None
+
+        result = json.loads(tool_calls[0].function.arguments)
+        result_map.update(_result_to_dict(result))
+
+    return [polarity_map[result_map.get(key, "neutral")] for key in annotations_map]
+
+
+def _result_to_dict(result: Any) -> dict[tuple[str, str], str]:
+    return {
+        (item["premise_id"], item["claim_id"]): item["polarity_type"]
+        for item in result["polarities"]
+        if "polarity_type" in item and "premise_id" in item and "claim_id" in item
+    }
