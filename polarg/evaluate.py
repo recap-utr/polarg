@@ -27,7 +27,15 @@ def main(
 ):
     graphs = [arguebuf.load.file(path) for path in sorted(path.glob(pattern))]
 
-    channel = grpc.insecure_channel(address)
+    channel_options = {
+        "grpc.lb_policy_name": "round_robin",
+        "grpc.max_send_message_length": -1,
+        "grpc.max_receive_message_length": -1,
+    }
+    channel = grpc.insecure_channel(
+        address,
+        options=list(channel_options.items()),
+    )
     client = entailment_pb2_grpc.EntailmentServiceStub(channel)
 
     predicted_labels: list[entailment_pb2.EntailmentType.ValueType] = []

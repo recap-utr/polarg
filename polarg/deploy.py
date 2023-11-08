@@ -134,6 +134,10 @@ def main(address: str):
         address,
         add_services,
         [arg_services.full_service_name(entailment_pb2, "EntailmentService")],
+        options={
+            "grpc.max_send_message_length": -1,
+            "grpc.max_receive_message_length": -1,
+        },
     )
 
 
