@@ -1,24 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Argument entailment",
-  "description": "Relation between a pair of arguments",
+  "title": "Argument polarity",
+  "description": "Relation between a claim and its premise",
   "type": "object",
   "properties": {
-    "entailments": {
+    "polarities": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "entailment_type": {
+          "claim_id": {
+            "description": "ID of the claim",
+            "type": "string"
+          },
+          "premise_id": {
+            "description": "ID of the premise",
+            "type": "string"
+          },
+          "polarity_type": {
             "description": "Relation between the provided claim and premise",
             "type": "string",
             "enum": ["support", "attack", "neutral"]
-          },
-          "probability": {
-            "description": "Accuracy of the predicted entailment_type",
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
           }
         }
       }

@@ -19,8 +19,13 @@ app = typer.Typer()
 
 
 @app.command()
-def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] = None):
-    graphs = [arguebuf.load.file(path) for path in path.glob(pattern)]
+def main(
+    address: str,
+    path: Path,
+    pattern: str,
+    openai_strategy: t.Optional[str] = None,
+):
+    graphs = [arguebuf.load.file(path) for path in sorted(path.glob(pattern))]
 
     channel = grpc.insecure_channel(address)
     client = entailment_pb2_grpc.EntailmentServiceStub(channel)
@@ -28,46 +33,49 @@ def main(address: str, path: Path, pattern: str, openai_model: t.Optional[str] =
     predicted_labels: list[entailment_pb2.EntailmentType.ValueType] = []
     true_labels: list[entailment_pb2.EntailmentType.ValueType] = []
 
-    for graph in graphs:
-        req = entailment_pb2.EntailmentsRequest(language="en")
+    with typer.progressbar(
+        graphs, show_pos=True, item_show_func=lambda x: x.name if x else ""
+    ) as batches:
+        for graph in batches:
+            req = entailment_pb2.EntailmentsRequest(language="en")
 
-        if openai_model:
-            req.extras["openai_model"] = openai_model
+            if openai_strategy:
+                req.extras["openai_strategy"] = openai_strategy
 
-        for node in graph.atom_nodes.values():
-            req.adus[node.id].text = node.plain_text
+            for node in graph.atom_nodes.values():
+                req.adus[node.id].text = node.plain_text
 
-        for annotation in graph_annotations(graph):
-            if (
-                annotation.label == EntailmentLabel.NEUTRAL
-                and not config.evaluate.include_neutral
-            ):
-                continue
+            for annotation in graph_annotations(graph):
+                if (
+                    annotation.label == EntailmentLabel.NEUTRAL
+                    and not config.evaluate.include_neutral
+                ):
+                    continue
 
-            context: list[entailment_pb2.EntailmentContext] | None = None
+                context: list[entailment_pb2.EntailmentContext] | None = None
 
-            if config.evaluate.include_context:
-                context = [
-                    entailment_pb2.EntailmentContext(
-                        adu_id=item.adu_id,
-                        type=contexttype_to_proto[item.type],
-                        weight=item.weight,
+                if config.evaluate.include_context:
+                    context = [
+                        entailment_pb2.EntailmentContext(
+                            adu_id=item.adu_id,
+                            type=contexttype_to_proto[item.type],
+                            weight=item.weight,
+                        )
+                        for item in annotation.context
+                    ]
+
+                req.query.append(
+                    entailment_pb2.EntailmentQuery(
+                        premise_id=annotation.premise_id,
+                        claim_id=annotation.claim_id,
+                        context=context,
                     )
-                    for item in annotation.context
-                ]
-
-            req.query.append(
-                entailment_pb2.EntailmentQuery(
-                    premise_id=annotation.premise_id,
-                    claim_id=annotation.claim_id,
-                    context=context,
                 )
-            )
-            assert annotation.label is not None
-            true_labels.append(label_to_proto[annotation.label])
+                assert annotation.label is not None
+                true_labels.append(label_to_proto[annotation.label])
 
-        res = client.Entailments(req)
-        predicted_labels.extend(entailment.type for entailment in res.entailments)
+            res = client.Entailments(req)
+            predicted_labels.extend(entailment.type for entailment in res.entailments)
 
     labels = sorted(set(predicted_labels).union(true_labels))
 

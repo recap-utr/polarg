@@ -1621,13 +1621,13 @@ wheel = "*"
 
 [[package]]
 name = "openai"
-version = "1.0.0rc3"
+version = "1.1.1"
 description = "Client library for the openai API"
 optional = false
 python-versions = ">=3.7.1"
 files = [
-    {file = "openai-1.0.0rc3-py3-none-any.whl", hash = "sha256:a93049800d2ed3c945833b3873941ee3121b556b75414fc59949001e0e91acb6"},
-    {file = "openai-1.0.0rc3.tar.gz", hash = "sha256:08a1ad27468ca6e9135eb4aaccdddaf29b61f6cb16f08ea38b140b8d412dcec2"},
+    {file = "openai-1.1.1-py3-none-any.whl", hash = "sha256:1496418b132c88352bcfffa8c24e83a69f0e01b1484cbb7bb48f722aad8fd6e1"},
+    {file = "openai-1.1.1.tar.gz", hash = "sha256:80e49cb21d8445f6d51339b8af7376fc83302c78ab78578b78133ef89634869d"},
 ]
 
 [package.dependencies]
@@ -3521,4 +3521,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "3e93ea50a2d51118d22b60d586302bab9ac190141056bb76f71cb2ab57d5ae32"
+content-hash = "eb877f4b1ed1cf60604f6bfeac0afba3bd9e2b2e40b0c966862743e8ecca6f52"

@@ -71,12 +71,17 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
                 )
 
             try:
-                openai_model = req.extras["openai_model"]
+                openai_strategy = t.cast(
+                    openai.Strategy | None, req.extras["openai_strategy"]
+                )
             except ValueError:
-                openai_model = None
+                openai_strategy = None
 
-            if isinstance(openai_model, str):
-                predictions = asyncio.run(openai.predict(annotations, openai_model))
+            if openai_strategy:
+                predicted_values = asyncio.run(
+                    openai.predict(annotations, openai_strategy)
+                )
+                predictions = [{val: 1.0} for val in predicted_values]
 
             else:
                 dataloader = DataLoader(
