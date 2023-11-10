@@ -10,13 +10,19 @@ from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
 from openai import AsyncOpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam as ChatMessage
 
-from polarg.model import llama
 from polarg.model.annotation import Annotation
 
-client = AsyncOpenAI(
+client_openai = AsyncOpenAI(
     http_client=httpx.AsyncClient(
         http2=True,
         timeout=httpx.Timeout(timeout=30, connect=5),
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    ),
+    max_retries=3,
+)
+client_llama = AsyncOpenAI(
+    http_client=httpx.AsyncClient(
+        timeout=httpx.Timeout(timeout=120, connect=5),
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
     ),
     max_retries=3,
@@ -108,16 +114,19 @@ async def chat_response(
     messages: list[ChatMessage], use_llama: bool, openai_model: ModelName
 ) -> str:
     if use_llama:
-        return llama.generate(messages)
+        response = await client_llama.chat.completions.create(
+            model="llama2",
+            messages=messages,
+        )
     else:
-        response = await client.chat.completions.create(
+        response = await client_openai.chat.completions.create(
             model=openai_model,
             messages=messages,
         )
 
-        response_msg = response.choices[0].message.content
-        assert response_msg is not None
-        return response_msg
+    response_msg = response.choices[0].message.content
+    assert response_msg is not None
+    return response_msg
 
 
 async def predict_isolated(
