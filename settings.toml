@@ -17,12 +17,13 @@ learning_rate = 0.00002
 include_neutral = false
 path = "data"
 patterns = [
-    "kialo/*.txt",
-    "kialo-nilesc/*.txt",
-    "kialo-graphnli/*.json",
-    "*.microtexts =/xml",
-    "microtexts-v2/*.xml",
-    "persuasive-essays/*.ann",
     "twitter-us2020/*.json",
-    "us-2016/*.json",
+    "hacker-news/*.json",
+    # "kialo/*.txt",
+    # "kialo-nilesc/*.txt",
+    # "kialo-graphnli/*.json",
+    # "microtexts/*.xml",
+    # "microtexts-v2/*.xml",
+    # "persuasive-essays/*.ann",
+    # "us-2016/*.json",
 ]
