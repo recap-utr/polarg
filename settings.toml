@@ -1,3 +1,5 @@
+openai_proxy_address = "TODO"
+
 [model]
 path = "data/model.pt"
 # pretrained = "microsoft/deberta-v3-base"

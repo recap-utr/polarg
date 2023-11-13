@@ -10,6 +10,7 @@ from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
 from openai import AsyncOpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam as ChatMessage
 
+from polarg.config import config
 from polarg.model.annotation import Annotation
 
 client_openai = AsyncOpenAI(
@@ -26,6 +27,7 @@ client_llama = AsyncOpenAI(
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
     ),
     max_retries=3,
+    base_url=config.openai_proxy_address,
 )
 
 
