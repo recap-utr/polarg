@@ -1,3 +1,6 @@
+# https://github.com/UKPLab/sentence-transformers/blob/master/examples/training/cross-encoder/training_nli.py
+# https://github.com/vibhor98/GraphNLI/blob/main/Baselines/sentence-bert/sbert_training.py
+
 import torch
 import torch.nn.functional as F
 import torchmetrics
@@ -7,7 +10,7 @@ from transformers.models.auto.modeling_auto import AutoModelForSequenceClassific
 from transformers.optimization import get_linear_schedule_with_warmup
 
 from polarg.config import config
-from polarg.model.annotation import label2proto
+from polarg.model.annotation import label_to_proto
 from polarg.model.dataset import BatchType, BatchTypeX
 
 
@@ -16,11 +19,14 @@ class EntailmentModule(LightningModule):
         self,
     ):
         super().__init__()
+        # The CrossEncoder from SBERT does the same thing but is not compatible with lightning
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            config.model.pretrained, num_labels=3
+            config.model.pretrained, num_labels=len(label_to_proto)
         )
         self.loss = torch.nn.CrossEntropyLoss()
-        self.accuracy = torchmetrics.Accuracy("multiclass", num_classes=3, top_k=1)
+        self.accuracy = torchmetrics.Accuracy(
+            "multiclass", num_classes=len(label_to_proto), top_k=1
+        )
 
     def forward(self, x: BatchTypeX):
         return self.model(**x)
@@ -60,7 +66,9 @@ class EntailmentModule(LightningModule):
         output: SequenceClassifierOutput = self(x)
         probabilities: list[float] = F.softmax(output.logits, dim=1).flatten().tolist()
 
-        return {enum: probabilities[label.value] for label, enum in label2proto.items()}
+        return {
+            enum: probabilities[label.value] for label, enum in label_to_proto.items()
+        }
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(

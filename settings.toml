@@ -1,6 +1,7 @@
 [model]
 path = "data/model.pt"
-pretrained = "meta-llama/Llama-2-7b-hf"
+# pretrained = "microsoft/deberta-v3-base"
+pretrained = "distilroberta-base"
 batch_size = 16
 max_sequence_length = 512
 dataloader_workers = 4
