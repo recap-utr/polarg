@@ -14,6 +14,8 @@ import typer
 from arg_services.mining.v1beta import entailment_pb2
 from mashumaro.mixins.orjson import DataClassORJSONMixin
 
+from polarg.config import config
+
 
 # The labels have to be in [0, ..., num_labels-1]
 class EntailmentLabel(Enum):
@@ -29,7 +31,7 @@ class AnnotationContextType(Enum):
 
 
 label_to_proto: dict[EntailmentLabel, entailment_pb2.EntailmentType.ValueType] = {
-    EntailmentLabel.NEUTRAL: entailment_pb2.EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
+    # EntailmentLabel.NEUTRAL: entailment_pb2.EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
     EntailmentLabel.ENTAILMENT: entailment_pb2.EntailmentType.ENTAILMENT_TYPE_ENTAILMENT,
     EntailmentLabel.CONTRADICTION: entailment_pb2.EntailmentType.ENTAILMENT_TYPE_CONTRADICTION,
 }
@@ -201,26 +203,30 @@ def graph_annotations(graph: arguebuf.Graph) -> list[Annotation]:
                     )
                 )
 
-    for premise in graph.atom_nodes.values():
-        # scheme nodes are also counted as a level, so it needs to be a multiple of 2
-        for claim in graph.sibling_nodes(premise, max_levels=2):
-            if isinstance(claim, arguebuf.AtomNode):
-                context = graph_context(graph, premise, claim)
-                annotations.append(
-                    Annotation(
-                        premise.plain_text,
-                        claim.plain_text,
-                        context,
-                        immutables.Map(
-                            {premise.id: premise.plain_text, claim.id: claim.plain_text}
-                            | {
-                                c.adu_id: graph.atom_nodes[c.adu_id].plain_text
-                                for c in context
-                            }
-                        ),
-                        EntailmentLabel.NEUTRAL,
+    if config.model.dataset.include_neutral:
+        for premise in graph.atom_nodes.values():
+            # scheme nodes are also counted as a level, so it needs to be a multiple of 2
+            for claim in graph.sibling_nodes(premise, max_levels=2):
+                if isinstance(claim, arguebuf.AtomNode):
+                    context = graph_context(graph, premise, claim)
+                    annotations.append(
+                        Annotation(
+                            premise.plain_text,
+                            claim.plain_text,
+                            context,
+                            immutables.Map(
+                                {
+                                    premise.id: premise.plain_text,
+                                    claim.id: claim.plain_text,
+                                }
+                                | {
+                                    c.adu_id: graph.atom_nodes[c.adu_id].plain_text
+                                    for c in context
+                                }
+                            ),
+                            EntailmentLabel.NEUTRAL,
+                        )
                     )
-                )
 
     return annotations
 

@@ -24,17 +24,6 @@ dataloader_args = {
 }
 
 
-def _parse_annotations(annotations: t.Iterable[Annotation]) -> tuple[Annotation, ...]:
-    if config.model.dataset.include_neutral:
-        return tuple(annotations)
-
-    return tuple(
-        annotation
-        for annotation in annotations
-        if annotation.label != EntailmentLabel.NEUTRAL
-    )
-
-
 class EntailmentDataModule(LightningDataModule):
     def __init__(self):
         super().__init__()
@@ -50,9 +39,9 @@ class EntailmentDataModule(LightningDataModule):
             validation.extend(dataset[2])
 
         self.dataset = AnnotationDataset(
-            train=_parse_annotations(train),
-            test=_parse_annotations(test),
-            validation=_parse_annotations(validation),
+            train=tuple(train),
+            test=tuple(test),
+            validation=tuple(validation),
         )
 
     def train_dataloader(self):
