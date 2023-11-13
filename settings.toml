@@ -12,7 +12,7 @@ max_epochs = 4
 learning_rate = 0.00002
 
 [model.dataset]
-include_neutral = true
+include_neutral = false
 path = "data"
 patterns = [
     "kialo/*.txt",
