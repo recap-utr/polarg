@@ -266,7 +266,7 @@ Provide exactly one prediction for each of them.
     )
 
     try:
-        response = await client.chat.completions.create(
+        response = await client_openai.chat.completions.create(
             model=model,
             messages=messages,
             tools=[
@@ -306,7 +306,7 @@ Please provide predictions for the following pairs:
                 }
             )
 
-            response = await client.chat.completions.create(
+            response = await client_openai.chat.completions.create(
                 model=model,
                 messages=messages,
                 tools=[
