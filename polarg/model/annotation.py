@@ -235,7 +235,9 @@ def convert_arguebuf(files: t.Collection[Path]) -> list[Annotation]:
     annotations = []
     file: Path
 
-    with typer.progressbar(files, show_pos=True) as batches:
+    with typer.progressbar(
+        files, show_pos=True, item_show_func=lambda file: file.name if file else ""
+    ) as batches:
         for file in batches:
             try:
                 graph = arguebuf.load.file(file)
