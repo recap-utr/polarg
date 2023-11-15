@@ -74,19 +74,19 @@ class AnnotationDataset(DataClassORJSONMixin):
 pheme_label: dict[str, EntailmentLabel] = {
     "ENTAILMENT": EntailmentLabel.ENTAILMENT,
     "CONTRADICTION": EntailmentLabel.CONTRADICTION,
-    "UNKNOWN": EntailmentLabel.NEUTRAL,
+    # "UNKNOWN": EntailmentLabel.NEUTRAL,
 }
 
 snli_label: dict[str, EntailmentLabel] = {
     "entailment": EntailmentLabel.ENTAILMENT,
     "contradiction": EntailmentLabel.CONTRADICTION,
-    "neutral": EntailmentLabel.NEUTRAL,
+    # "neutral": EntailmentLabel.NEUTRAL,
 }
 
 arguebuf_label: dict[type[arguebuf.Scheme | None], EntailmentLabel] = {
     arguebuf.Support: EntailmentLabel.ENTAILMENT,
     arguebuf.Attack: EntailmentLabel.CONTRADICTION,
-    type(None): EntailmentLabel.NEUTRAL,
+    # type(None): EntailmentLabel.NEUTRAL,
 }
 
 
