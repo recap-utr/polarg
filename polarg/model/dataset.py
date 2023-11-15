@@ -1,4 +1,5 @@
 import typing as t
+from pathlib import Path
 
 import torch
 from lightning import LightningDataModule
@@ -32,8 +33,10 @@ class EntailmentDataModule(LightningDataModule):
         test: list[Annotation] = []
         validation: list[Annotation] = []
 
-        for pattern in config.model.dataset.patterns:
-            dataset = load_dataset(config.model.dataset.path, pattern, convert_arguebuf)
+        for name, pattern in config.model.dataset.patterns.items():
+            dataset = load_dataset(
+                Path(config.model.dataset.path, name), pattern, convert_arguebuf
+            )
             train.extend(dataset[0])
             test.extend(dataset[1])
             validation.extend(dataset[2])
