@@ -50,7 +50,7 @@ class EntailmentModule(LightningModule):
             return loss
 
         accuracy = self.accuracy(predictions, y)
-        self.log(f"{stage}_loss", loss, on_epoch=True, sync_dist=True)
+        self.log(f"{stage}_accuracy", accuracy, on_epoch=True, sync_dist=True)
 
         return {"loss": loss, "accuracy": accuracy}
 
