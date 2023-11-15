@@ -3,8 +3,8 @@
 
 import torch
 import torch.nn.functional as F
-import torchmetrics
 from lightning import LightningModule
+from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.auto.modeling_auto import AutoModelForSequenceClassification
 from transformers.optimization import get_linear_schedule_with_warmup
@@ -24,8 +24,10 @@ class EntailmentModule(LightningModule):
             config.model.pretrained, num_labels=len(label_to_proto)
         )
         self.loss = torch.nn.CrossEntropyLoss()
-        self.accuracy = torchmetrics.Accuracy(
-            "multiclass", num_classes=len(label_to_proto), top_k=1
+        self.accuracy = (
+            BinaryAccuracy()
+            if len(label_to_proto) == 2
+            else MulticlassAccuracy(num_classes=len(label_to_proto), top_k=1)
         )
 
     def forward(self, x: BatchTypeX):
