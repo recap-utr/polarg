@@ -8,7 +8,7 @@ authors = ["Mirko Lenz <info@mirko-lenz.de>"]
 python = ">=3.10,<3.13"
 dynaconf = "^3.2"
 transformers = "^4.34"
-torch = "^2.1.1"
+torch = "==2.0.0"
 typer = "^0.9"
 arg-services = "^1.5"
 arguebuf = "^2.4"
