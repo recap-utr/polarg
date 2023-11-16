@@ -8,28 +8,13 @@ from typing import Any, Literal, TypedDict
 import httpx
 from arg_services.mining.v1beta.entailment_pb2 import EntailmentType
 from openai import AsyncOpenAI, OpenAIError
+from openai._types import NOT_GIVEN, NotGiven
+from openai.types.chat import ChatCompletionMessage
 from openai.types.chat import ChatCompletionMessageParam as ChatMessage
+from openai.types.chat.completion_create_params import Function, FunctionCall
 
 from polarg.config import config
 from polarg.model.annotation import Annotation
-
-client_openai = AsyncOpenAI(
-    http_client=httpx.AsyncClient(
-        http2=True,
-        timeout=httpx.Timeout(timeout=30, connect=5),
-        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
-    ),
-    max_retries=3,
-)
-client_llama = AsyncOpenAI(
-    http_client=httpx.AsyncClient(
-        timeout=httpx.Timeout(timeout=120, connect=5),
-        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
-    ),
-    max_retries=3,
-    base_url=config.openai_proxy_address,
-)
-
 
 polarity_map = {
     "support": EntailmentType.ENTAILMENT_TYPE_ENTAILMENT,
@@ -81,6 +66,11 @@ def generate_system_message(include_neutral: bool) -> str:
         return BASE_SYSTEM_MESSAGE
 
 
+def batchify(seq: abc.Sequence[Any], n: int):
+    for i in range(0, len(seq), n):
+        yield seq[i : i + n]
+
+
 # sequential: send prompts one-by-one and append previous messages to the prompt to simulate memory. Does not use context.
 # isolated: send prompts one-by-one without appending previous messages to the prompt. Uses context if `include_context` is true.
 # batched: send all prompts at once and append previous messages to the prompt to simulate memory. Does not use context.
@@ -93,249 +83,279 @@ class Options(TypedDict):
     include_neutral: bool
 
 
+openai_models: dict[Strategy, ModelName] = {
+    "isolated": "gpt-3.5-turbo-1106",
+    "sequential": "gpt-3.5-turbo-1106",
+    "batched": "gpt-3.5-turbo-1106",
+}
+
+
 async def predict(
     annotations: abc.Sequence[Annotation], options: Options
 ) -> list[EntailmentType.ValueType]:
     predictions: list[EntailmentType.ValueType] | None = None
+    llm = Llm(options)
 
     if options["strategy"] == "isolated":
         predictions = await asyncio.gather(
-            *(predict_isolated(annotation, options) for annotation in annotations)
+            *(llm.predict_isolated(annotation) for annotation in annotations)
         )
     elif options["strategy"] == "sequential":
-        predictions = await predict_sequential(annotations, options)
+        predictions = await llm.predict_sequential(annotations)
     elif options["strategy"] == "batched":
-        predictions = await predict_batched(annotations, options)
+        predictions = await llm.predict_batched(annotations)
 
     assert predictions is not None
 
     return predictions
 
 
-async def chat_response(
-    messages: list[ChatMessage], use_llama: bool, openai_model: ModelName
-) -> str:
-    if use_llama:
-        response = await client_llama.chat.completions.create(
-            model="llama2",
+class Llm:
+    def __init__(self, options: Options):
+        self.options = options
+        # self.llama_client = httpx.AsyncClient(
+        #     timeout=httpx.Timeout(timeout=120, connect=5),
+        #     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        #     base_url=f"http://{config.llama_address}/api",
+        # )
+
+        if options["use_llama"]:
+            self.client = AsyncOpenAI(
+                http_client=httpx.AsyncClient(
+                    timeout=httpx.Timeout(timeout=120, connect=5),
+                    limits=httpx.Limits(
+                        max_connections=100, max_keepalive_connections=20
+                    ),
+                ),
+                max_retries=3,
+                base_url=config.openai_proxy_address,
+            )
+        else:
+            self.client = AsyncOpenAI(
+                http_client=httpx.AsyncClient(
+                    http2=True,
+                    timeout=httpx.Timeout(timeout=30, connect=5),
+                    limits=httpx.Limits(
+                        max_connections=100, max_keepalive_connections=20
+                    ),
+                ),
+                max_retries=3,
+            )
+
+    # async def fetch_llama(
+    #     self, message: str, system_message: str, json: bool = False
+    # ) -> str:
+    #     response = await self.llama_client.post(
+    #         "generate",
+    #         json={
+    #             "prompt": message,
+    #             "system_prompt": system_message,
+    #             "format": "json" if json else "text",
+    #         },
+    #     )
+    #     return response.json()["response"]
+
+    async def generate(
+        self,
+        messages: list[ChatMessage],
+        functions: list[Function] | NotGiven = NOT_GIVEN,
+        function_call: FunctionCall | NotGiven = NOT_GIVEN,
+    ) -> ChatCompletionMessage:
+        response = await self.client.chat.completions.create(
+            model=openai_models[self.options["strategy"]]
+            if self.options["use_llama"]
+            else "llama2",
             messages=messages,
-        )
-    else:
-        response = await client_openai.chat.completions.create(
-            model=openai_model,
-            messages=messages,
+            functions=functions,
+            function_call=function_call,
         )
 
-    response_msg = response.choices[0].message.content
-    assert response_msg is not None
-    return response_msg
+        response_msg = response.choices[0].message
+        return response_msg
 
-
-async def predict_isolated(
-    annotation: Annotation, options: Options, model: ModelName = "gpt-3.5-turbo-1106"
-) -> EntailmentType.ValueType:
-    premise = annotation.adus[annotation.premise_id]
-    claim = annotation.adus[annotation.claim_id]
-
-    user_msg = f"""
-Premise: {premise}.
-Claim: {claim}.
-    """
-
-    if len(annotation.context) > 0:
-        annotation_context = "\n".join(
-            annotation.adus[ctx.adu_id] for ctx in annotation.context
-        )
-        user_msg += f"""
-The premise and the claim have the following neighbors in the conversation:
-{annotation_context}
-        """
-
-    messages: list[ChatMessage] = [
-        {
-            "role": "system",
-            "content": generate_system_message(options["include_neutral"]),
-        },
-        {
-            "role": "user",
-            "content": user_msg,
-        },
-    ]
-
-    try:
-        res = await chat_response(messages, options["use_llama"], model)
-        prediction = res.lower()
-
-        if "support" in prediction:
-            return EntailmentType.ENTAILMENT_TYPE_ENTAILMENT
-        elif "attack" in prediction:
-            return EntailmentType.ENTAILMENT_TYPE_CONTRADICTION
-
-    except OpenAIError:
-        pass
-
-    return EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
-
-
-async def predict_sequential(
-    annotations: abc.Sequence[Annotation],
-    options: Options,
-    model: ModelName = "gpt-3.5-turbo-1106",
-) -> list[EntailmentType.ValueType]:
-    predictions: list[EntailmentType.ValueType] = []
-    messages: list[ChatMessage] = [
-        {
-            "role": "system",
-            "content": generate_system_message(options["include_neutral"]),
-        }
-    ]
-
-    for annotation in annotations:
+    async def predict_isolated(
+        self, annotation: Annotation
+    ) -> EntailmentType.ValueType:
         premise = annotation.adus[annotation.premise_id]
         claim = annotation.adus[annotation.claim_id]
 
-        messages.append(
+        user_msg = f"""
+    Premise: {premise}.
+    Claim: {claim}.
+        """
+
+        if len(annotation.context) > 0:
+            annotation_context = "\n".join(
+                annotation.adus[ctx.adu_id] for ctx in annotation.context
+            )
+            user_msg += f"""
+The premise and the claim have the following neighbors in the conversation:
+{annotation_context}
+"""
+
+        messages: list[ChatMessage] = [
+            {
+                "role": "system",
+                "content": generate_system_message(self.options["include_neutral"]),
+            },
             {
                 "role": "user",
-                "content": f"""
-Premise: {premise}.
-Claim: {claim}.
-""",
-            }
-        )
+                "content": user_msg,
+            },
+        ]
 
         try:
-            res = await chat_response(messages, options["use_llama"], model)
-            prediction = res.lower()
+            res = await self.generate(messages)
+            assert res.content is not None
+            prediction = res.content.lower()
 
             if "support" in prediction:
-                predictions.append(EntailmentType.ENTAILMENT_TYPE_ENTAILMENT)
+                return EntailmentType.ENTAILMENT_TYPE_ENTAILMENT
             elif "attack" in prediction:
-                predictions.append(EntailmentType.ENTAILMENT_TYPE_CONTRADICTION)
-            else:
-                predictions.append(EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED)
+                return EntailmentType.ENTAILMENT_TYPE_CONTRADICTION
 
-            messages.append({"role": "assistant", "content": res})
+        except OpenAIError as e:
+            print(e)
 
-        except OpenAIError:
-            predictions.append(EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED)
+        return EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
 
-    return predictions
+    async def predict_sequential(
+        self, annotations: abc.Sequence[Annotation]
+    ) -> list[EntailmentType.ValueType]:
+        predictions: list[EntailmentType.ValueType] = []
+        messages: list[ChatMessage] = [
+            {
+                "role": "system",
+                "content": generate_system_message(self.options["include_neutral"]),
+            }
+        ]
 
+        for annotation in annotations:
+            premise = annotation.adus[annotation.premise_id]
+            claim = annotation.adus[annotation.claim_id]
 
-def batchify(seq: abc.Sequence[Any], n: int):
-    for i in range(0, len(seq), n):
-        yield seq[i : i + n]
-
-
-async def predict_batched(
-    annotations: abc.Sequence[Annotation],
-    options: Options,
-    model: ModelName = "gpt-3.5-turbo-1106",
-    # model: ModelName = "gpt-4-1106-preview",
-) -> list[EntailmentType.ValueType]:
-    annotations_map = {
-        (annotation.premise_id, annotation.claim_id): annotation
-        for annotation in annotations
-    }
-    messages: list[ChatMessage] = [
-        {
-            "role": "system",
-            "content": f"""
-{generate_system_message(options["include_neutral"])},
-You will be presented with a list of premise-claim pairs containing their text and id encoded as a JSON array.
-Provide exactly one prediction for each of them.
-""",
-        }
-    ]
-    result_map: dict[tuple[str, str], str] = {}
-
-    annotation_pairs = [
-        {
-            "premise_text": annotation.adus[annotation.premise_id],
-            "premise_id": annotation.premise_id,
-            "claim_text": annotation.adus[annotation.claim_id],
-            "claim_id": annotation.claim_id,
-        }
-        for annotation in annotations
-    ]
-
-    messages.append(
-        {
-            "role": "user",
-            "content": json.dumps(annotation_pairs),
-        }
-    )
-
-    try:
-        response = await client_openai.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=[
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "predict_entailment",
-                        "parameters": generate_schema(options["include_neutral"]),
-                    },
-                }
-            ],
-            tool_choice={
-                "type": "function",
-                "function": {"name": "predict_entailment"},
-            },
-        )
-        tool_calls = response.choices[0].message.tool_calls
-        assert tool_calls is not None
-
-        result = json.loads(tool_calls[0].function.arguments)
-        result_map.update(_result_to_dict(result))
-
-        missing_pairs = set(annotations_map.keys()).difference(result_map.keys())
-
-        if len(missing_pairs) > 0:
-            messages.append(
-                {"role": "assistant", "content": tool_calls[0].function.arguments}
-            )
             messages.append(
                 {
                     "role": "user",
                     "content": f"""
-Some pairs are missing from your previous response.
-Please provide predictions for the following pairs:
-{json.dumps(list(missing_pairs))}
+Premise: {premise}.
+Claim: {claim}.
 """,
                 }
             )
 
-            response = await client_openai.chat.completions.create(
-                model=model,
+            try:
+                res = await self.generate(messages)
+                assert res.content is not None
+                prediction = res.content.lower()
+
+                if "support" in prediction:
+                    predictions.append(EntailmentType.ENTAILMENT_TYPE_ENTAILMENT)
+                elif "attack" in prediction:
+                    predictions.append(EntailmentType.ENTAILMENT_TYPE_CONTRADICTION)
+                else:
+                    predictions.append(EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED)
+
+                messages.append({"role": "assistant", "content": res.content})
+
+            except OpenAIError as e:
+                print(e)
+                predictions.append(EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED)
+
+        return predictions
+
+    async def predict_batched(
+        self,
+        annotations: abc.Sequence[Annotation],
+    ) -> list[EntailmentType.ValueType]:
+        annotations_map = {
+            (annotation.premise_id, annotation.claim_id): annotation
+            for annotation in annotations
+        }
+        messages: list[ChatMessage] = [
+            {
+                "role": "system",
+                "content": f"""
+{generate_system_message(self.options["include_neutral"])},
+You will be presented with a list of premise-claim pairs containing their text and id encoded as a JSON array.
+Provide exactly one prediction for each of them using the function `predict_entailment`.
+""",
+            }
+        ]
+        result_map: dict[tuple[str, str], str] = {}
+
+        annotation_pairs = [
+            {
+                "premise_text": annotation.adus[annotation.premise_id],
+                "premise_id": annotation.premise_id,
+                "claim_text": annotation.adus[annotation.claim_id],
+                "claim_id": annotation.claim_id,
+            }
+            for annotation in annotations
+        ]
+
+        messages.append(
+            {
+                "role": "user",
+                "content": json.dumps(annotation_pairs),
+            }
+        )
+
+        try:
+            res = await self.generate(
                 messages=messages,
-                tools=[
+                functions=[
                     {
-                        "type": "function",
-                        "function": {
-                            "name": "predict_entailment",
-                            "parameters": generate_schema(options["include_neutral"]),
-                        },
+                        "name": "predict_entailment",
+                        "parameters": generate_schema(self.options["include_neutral"]),
                     }
                 ],
-                tool_choice={
-                    "type": "function",
-                    "function": {"name": "predict_entailment"},
-                },
+                function_call={"name": "predict_entailment"},
             )
+            assert res.function_call is not None
 
-            tool_calls = response.choices[0].message.tool_calls
-            assert tool_calls is not None
-
-            result = json.loads(tool_calls[0].function.arguments)
+            result = json.loads(res.function_call.arguments)
             result_map.update(_result_to_dict(result))
 
-    except OpenAIError:
-        pass
+            missing_pairs = set(annotations_map.keys()).difference(result_map.keys())
 
-    return [polarity_map[result_map.get(key)] for key in annotations_map]
+            if len(missing_pairs) > 0:
+                messages.append(
+                    {"role": "assistant", "content": res.function_call.arguments}
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"""
+Some pairs are missing from your previous response.
+Please provide predictions for the following pairs using the function `predict_entailment`:
+{json.dumps(list(missing_pairs))}
+""",
+                    }
+                )
+
+                res = await self.generate(
+                    messages=messages,
+                    functions=[
+                        {
+                            "name": "predict_entailment",
+                            "parameters": generate_schema(
+                                self.options["include_neutral"]
+                            ),
+                        }
+                    ],
+                    function_call={"name": "predict_entailment"},
+                )
+
+                assert res.function_call is not None
+
+                result = json.loads(res.function_call.arguments)
+                result_map.update(_result_to_dict(result))
+
+        except OpenAIError as e:
+            print(e)
+
+        return [polarity_map[result_map.get(key)] for key in annotations_map]
 
 
 def _result_to_dict(result: Any) -> dict[tuple[str, str], str]:
