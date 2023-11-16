@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 from collections import abc
 from copy import deepcopy
 from pathlib import Path
@@ -86,7 +87,7 @@ class Options(TypedDict):
 openai_models: dict[Strategy, ModelName] = {
     "isolated": "gpt-3.5-turbo-1106",
     "sequential": "gpt-3.5-turbo-1106",
-    "batched": "gpt-3.5-turbo-1106",
+    "batched": "gpt-4-1106-preview",
 }
 
 
@@ -119,28 +120,15 @@ class Llm:
         #     base_url=f"http://{config.llama_address}/api",
         # )
 
-        if options["use_llama"]:
-            self.client = AsyncOpenAI(
-                http_client=httpx.AsyncClient(
-                    timeout=httpx.Timeout(timeout=120, connect=5),
-                    limits=httpx.Limits(
-                        max_connections=100, max_keepalive_connections=20
-                    ),
-                ),
-                max_retries=3,
-                base_url=config.openai_proxy_address,
-            )
-        else:
-            self.client = AsyncOpenAI(
-                http_client=httpx.AsyncClient(
-                    http2=True,
-                    timeout=httpx.Timeout(timeout=30, connect=5),
-                    limits=httpx.Limits(
-                        max_connections=100, max_keepalive_connections=20
-                    ),
-                ),
-                max_retries=3,
-            )
+        self.client = AsyncOpenAI(
+            http_client=httpx.AsyncClient(
+                http2=False if options["use_llama"] else True,
+                timeout=httpx.Timeout(timeout=120, connect=5),
+                limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            ),
+            max_retries=2,
+            base_url=config.openai_proxy_address if options["use_llama"] else None,
+        )
 
     # async def fetch_llama(
     #     self, message: str, system_message: str, json: bool = False
@@ -162,9 +150,9 @@ class Llm:
         function_call: FunctionCall | NotGiven = NOT_GIVEN,
     ) -> ChatCompletionMessage:
         response = await self.client.chat.completions.create(
-            model=openai_models[self.options["strategy"]]
+            model="ollama/llama2:13b"
             if self.options["use_llama"]
-            else "llama2",
+            else openai_models[self.options["strategy"]],
             messages=messages,
             functions=functions,
             function_call=function_call,
@@ -272,18 +260,7 @@ Claim: {claim}.
             (annotation.premise_id, annotation.claim_id): annotation
             for annotation in annotations
         }
-        messages: list[ChatMessage] = [
-            {
-                "role": "system",
-                "content": f"""
-{generate_system_message(self.options["include_neutral"])},
-You will be presented with a list of premise-claim pairs containing their text and id encoded as a JSON array.
-Provide exactly one prediction for each of them using the function `predict_entailment`.
-""",
-            }
-        ]
         result_map: dict[tuple[str, str], str] = {}
-
         annotation_pairs = [
             {
                 "premise_text": annotation.adus[annotation.premise_id],
@@ -294,46 +271,29 @@ Provide exactly one prediction for each of them using the function `predict_enta
             for annotation in annotations
         ]
 
-        messages.append(
-            {
-                "role": "user",
-                "content": json.dumps(annotation_pairs),
-            }
-        )
+        max_samples_per_batch = 20
+        number_of_batches = math.ceil(len(annotation_pairs) / max_samples_per_batch)
+        batch_size = math.ceil(len(annotation_pairs) / number_of_batches)
 
-        try:
-            res = await self.generate(
-                messages=messages,
-                functions=[
-                    {
-                        "name": "predict_entailment",
-                        "parameters": generate_schema(self.options["include_neutral"]),
-                    }
-                ],
-                function_call={"name": "predict_entailment"},
-            )
-            assert res.function_call is not None
-
-            result = json.loads(res.function_call.arguments)
-            result_map.update(_result_to_dict(result))
-
-            missing_pairs = set(annotations_map.keys()).difference(result_map.keys())
-
-            if len(missing_pairs) > 0:
-                messages.append(
-                    {"role": "assistant", "content": res.function_call.arguments}
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"""
-Some pairs are missing from your previous response.
-Please provide predictions for the following pairs using the function `predict_entailment`:
-{json.dumps(list(missing_pairs))}
+        for batch in batchify(annotation_pairs, batch_size):
+            messages: list[ChatMessage] = [
+                {
+                    "role": "system",
+                    "content": f"""
+{generate_system_message(self.options["include_neutral"])},
+You will be presented with a list of premise-claim pairs containing their text and id encoded as a JSON array.
+Provide exactly one prediction for each of them using the function `predict_entailment`.
 """,
-                    }
-                )
+                }
+            ]
+            messages.append(
+                {
+                    "role": "user",
+                    "content": json.dumps(batch),
+                }
+            )
 
+            try:
                 res = await self.generate(
                     messages=messages,
                     functions=[
@@ -346,14 +306,53 @@ Please provide predictions for the following pairs using the function `predict_e
                     ],
                     function_call={"name": "predict_entailment"},
                 )
-
                 assert res.function_call is not None
 
                 result = json.loads(res.function_call.arguments)
-                result_map.update(_result_to_dict(result))
+                batch_result_map = _result_to_dict(result)
+                batch_annotations = {
+                    (item["premise_id"], item["claim_id"]) for item in batch
+                }
 
-        except OpenAIError as e:
-            print(e)
+                missing_pairs = batch_annotations.difference(batch_result_map.keys())
+
+                if len(missing_pairs) > 0:
+                    messages.append(
+                        {"role": "assistant", "content": res.function_call.arguments}
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"""
+Some pairs are missing from your previous response.
+Please provide predictions for the following pairs using the function `predict_entailment`:
+{json.dumps(list(missing_pairs))}
+""",
+                        }
+                    )
+
+                    res = await self.generate(
+                        messages=messages,
+                        functions=[
+                            {
+                                "name": "predict_entailment",
+                                "parameters": generate_schema(
+                                    self.options["include_neutral"]
+                                ),
+                            }
+                        ],
+                        function_call={"name": "predict_entailment"},
+                    )
+
+                    assert res.function_call is not None
+
+                    result = json.loads(res.function_call.arguments)
+                    batch_result_map.update(_result_to_dict(result))
+
+                result_map.update(batch_result_map)
+
+            except OpenAIError as e:
+                print(e)
 
         return [polarity_map[result_map.get(key)] for key in annotations_map]
 
@@ -361,6 +360,6 @@ Please provide predictions for the following pairs using the function `predict_e
 def _result_to_dict(result: Any) -> dict[tuple[str, str], str]:
     return {
         (item["premise_id"], item["claim_id"]): item["polarity_type"]
-        for item in result["polarities"]
+        for item in result.get("polarities", [])
         if "polarity_type" in item and "premise_id" in item and "claim_id" in item
     }
