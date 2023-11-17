@@ -20,7 +20,7 @@ from polarg.model.annotation import Annotation
 polarity_map = {
     "support": EntailmentType.ENTAILMENT_TYPE_ENTAILMENT,
     "attack": EntailmentType.ENTAILMENT_TYPE_CONTRADICTION,
-    "neutral": EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
+    # "neutral": EntailmentType.ENTAILMENT_TYPE_NEUTRAL,
     None: EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED,
 }
 
@@ -98,9 +98,14 @@ async def predict(
     llm = Llm(options)
 
     if options["strategy"] == "isolated":
-        predictions = await asyncio.gather(
-            *(llm.predict_isolated(annotation) for annotation in annotations)
-        )
+        predictions = []
+
+        for batch in batchify(annotations, 8):
+            predictions.extend(
+                await asyncio.gather(
+                    *(llm.predict_isolated(annotation) for annotation in batch)
+                )
+            )
     elif options["strategy"] == "sequential":
         predictions = await llm.predict_sequential(annotations)
     elif options["strategy"] == "batched":
@@ -114,13 +119,13 @@ async def predict(
 class Llm:
     def __init__(self, options: Options):
         self.options = options
-        # self.llama_client = httpx.AsyncClient(
-        #     timeout=httpx.Timeout(timeout=120, connect=5),
-        #     limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
-        #     base_url=f"http://{config.llama_address}/api",
-        # )
+        self.llama_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout=120, connect=5),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            base_url=f"{config.openai_proxy_address}/api",
+        )
 
-        self.client = AsyncOpenAI(
+        self.openai_client = AsyncOpenAI(
             http_client=httpx.AsyncClient(
                 http2=False if options["use_llama"] else True,
                 timeout=httpx.Timeout(timeout=120, connect=5),
@@ -130,36 +135,87 @@ class Llm:
             base_url=config.openai_proxy_address if options["use_llama"] else None,
         )
 
-    # async def fetch_llama(
-    #     self, message: str, system_message: str, json: bool = False
-    # ) -> str:
-    #     response = await self.llama_client.post(
-    #         "generate",
-    #         json={
-    #             "prompt": message,
-    #             "system_prompt": system_message,
-    #             "format": "json" if json else "text",
-    #         },
-    #     )
-    #     return response.json()["response"]
-
     async def generate(
+        self, user_prompt: str, system_prompt: str, context: list[Any] | None = None
+    ) -> tuple[str, list[Any]]:
+        # if self.options["use_llama"]:
+        #     res = await self.fetch_llama(user_prompt, system_prompt, context)
+
+        #     return res
+
+        # else:
+        res = await self.fetch_openai(user_prompt, system_prompt, context)
+        assert res[0].content is not None
+
+        return res[0].content, res[1]
+
+    async def fetch_llama(
         self,
-        messages: list[ChatMessage],
+        user_prompt: str,
+        system_prompt: str,
+        context: list[int] | None = None,
+        json: bool = False,
+    ) -> tuple[str, list[int]]:
+        raw_res = await self.llama_client.post(
+            "generate",
+            json={
+                "model": "llama2:13b",
+                "prompt": user_prompt,
+                "system_prompt": system_prompt,
+                "format": "json" if json else None,
+                "context": context,
+                "stream": False,
+            },
+        )
+        res = raw_res.json()
+
+        return res["response"], res["context"]
+
+    async def fetch_openai(
+        self,
+        user_prompt: str,
+        system_prompt: str,
+        context: list[ChatMessage] | None = None,
         functions: list[Function] | NotGiven = NOT_GIVEN,
         function_call: FunctionCall | NotGiven = NOT_GIVEN,
-    ) -> ChatCompletionMessage:
-        response = await self.client.chat.completions.create(
+    ) -> tuple[ChatCompletionMessage, list[ChatMessage]]:
+        if context is None:
+            context = []
+
+        system_message: ChatMessage = {
+            "role": "system",
+            "content": system_prompt,
+        }
+        user_message: ChatMessage = {
+            "role": "user",
+            "content": user_prompt,
+        }
+
+        response = await self.openai_client.chat.completions.create(
             model="ollama/llama2:13b"
             if self.options["use_llama"]
             else openai_models[self.options["strategy"]],
-            messages=messages,
+            messages=[system_message, *context, user_message],
             functions=functions,
             function_call=function_call,
         )
 
         response_msg = response.choices[0].message
-        return response_msg
+
+        assistant_content = ""
+
+        if response_msg.content is not None:
+            assistant_content = response_msg.content
+        elif response_msg.function_call is not None:
+            assistant_content = response_msg.function_call.arguments
+
+        new_context: list[ChatMessage] = [
+            *context,
+            user_message,
+            {"role": "assistant", "content": assistant_content},
+        ]
+
+        return (response_msg, new_context)
 
     async def predict_isolated(
         self, annotation: Annotation
@@ -168,9 +224,9 @@ class Llm:
         claim = annotation.adus[annotation.claim_id]
 
         user_msg = f"""
-    Premise: {premise}.
-    Claim: {claim}.
-        """
+Premise: {premise}.
+Claim: {claim}.
+"""
 
         if len(annotation.context) > 0:
             annotation_context = "\n".join(
@@ -181,21 +237,12 @@ The premise and the claim have the following neighbors in the conversation:
 {annotation_context}
 """
 
-        messages: list[ChatMessage] = [
-            {
-                "role": "system",
-                "content": generate_system_message(self.options["include_neutral"]),
-            },
-            {
-                "role": "user",
-                "content": user_msg,
-            },
-        ]
-
         try:
-            res = await self.generate(messages)
-            assert res.content is not None
-            prediction = res.content.lower()
+            res, _ = await self.generate(
+                user_prompt=user_msg,
+                system_prompt=generate_system_message(self.options["include_neutral"]),
+            )
+            prediction = res.lower()
 
             if "support" in prediction:
                 return EntailmentType.ENTAILMENT_TYPE_ENTAILMENT
@@ -211,31 +258,25 @@ The premise and the claim have the following neighbors in the conversation:
         self, annotations: abc.Sequence[Annotation]
     ) -> list[EntailmentType.ValueType]:
         predictions: list[EntailmentType.ValueType] = []
-        messages: list[ChatMessage] = [
-            {
-                "role": "system",
-                "content": generate_system_message(self.options["include_neutral"]),
-            }
-        ]
+        context = []
 
         for annotation in annotations:
             premise = annotation.adus[annotation.premise_id]
             claim = annotation.adus[annotation.claim_id]
 
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"""
+            user_prompt = f"""
 Premise: {premise}.
 Claim: {claim}.
-""",
-                }
-            )
-
+"""
             try:
-                res = await self.generate(messages)
-                assert res.content is not None
-                prediction = res.content.lower()
+                res, new_context = await self.generate(
+                    user_prompt=user_prompt,
+                    system_prompt=generate_system_message(
+                        self.options["include_neutral"]
+                    ),
+                    context=context,
+                )
+                prediction = res.lower()
 
                 if "support" in prediction:
                     predictions.append(EntailmentType.ENTAILMENT_TYPE_ENTAILMENT)
@@ -244,7 +285,7 @@ Claim: {claim}.
                 else:
                     predictions.append(EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED)
 
-                messages.append({"role": "assistant", "content": res.content})
+                context = new_context
 
             except OpenAIError as e:
                 print(e)
@@ -271,31 +312,22 @@ Claim: {claim}.
             for annotation in annotations
         ]
 
-        max_samples_per_batch = 20
+        max_samples_per_batch = 50
         number_of_batches = math.ceil(len(annotation_pairs) / max_samples_per_batch)
         batch_size = math.ceil(len(annotation_pairs) / number_of_batches)
 
         for batch in batchify(annotation_pairs, batch_size):
-            messages: list[ChatMessage] = [
-                {
-                    "role": "system",
-                    "content": f"""
+            system_prompt = f"""
 {generate_system_message(self.options["include_neutral"])},
 You will be presented with a list of premise-claim pairs containing their text and id encoded as a JSON array.
 Provide exactly one prediction for each of them using the function `predict_entailment`.
-""",
-                }
-            ]
-            messages.append(
-                {
-                    "role": "user",
-                    "content": json.dumps(batch),
-                }
-            )
+"""
+            user_prompt = json.dumps(batch)
 
             try:
-                res = await self.generate(
-                    messages=messages,
+                res, context = await self.fetch_openai(
+                    user_prompt=user_prompt,
+                    system_prompt=system_prompt,
                     functions=[
                         {
                             "name": "predict_entailment",
@@ -317,22 +349,16 @@ Provide exactly one prediction for each of them using the function `predict_enta
                 missing_pairs = batch_annotations.difference(batch_result_map.keys())
 
                 if len(missing_pairs) > 0:
-                    messages.append(
-                        {"role": "assistant", "content": res.function_call.arguments}
-                    )
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": f"""
+                    user_prompt = f"""
 Some pairs are missing from your previous response.
 Please provide predictions for the following pairs using the function `predict_entailment`:
 {json.dumps(list(missing_pairs))}
-""",
-                        }
-                    )
+"""
 
-                    res = await self.generate(
-                        messages=messages,
+                    res, _ = await self.fetch_openai(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        context=context,
                         functions=[
                             {
                                 "name": "predict_entailment",
@@ -354,12 +380,17 @@ Please provide predictions for the following pairs using the function `predict_e
             except OpenAIError as e:
                 print(e)
 
-        return [polarity_map[result_map.get(key)] for key in annotations_map]
+        return [
+            polarity_map.get(
+                result_map.get(key), EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
+            )
+            for key in annotations_map
+        ]
 
 
 def _result_to_dict(result: Any) -> dict[tuple[str, str], str]:
     return {
-        (item["premise_id"], item["claim_id"]): item["polarity_type"]
+        (item["premise_id"], item["claim_id"]): item["polarity_type"].lower()
         for item in result.get("polarities", [])
         if "polarity_type" in item and "premise_id" in item and "claim_id" in item
     }
