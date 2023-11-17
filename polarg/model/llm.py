@@ -314,9 +314,9 @@ Claim: {claim}.
 
         max_samples_per_batch = 50
         number_of_batches = math.ceil(len(annotation_pairs) / max_samples_per_batch)
-        batch_size = math.ceil(len(annotation_pairs) / number_of_batches)
+        batch_size = math.ceil(len(annotation_pairs) / max(number_of_batches, 1))
 
-        for batch in batchify(annotation_pairs, batch_size):
+        for batch in batchify(annotation_pairs, max(batch_size, 1)):
             system_prompt = f"""
 {generate_system_message(self.options["include_neutral"])},
 You will be presented with a list of premise-claim pairs containing their text and id encoded as a JSON array.
