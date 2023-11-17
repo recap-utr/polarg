@@ -1,3 +1,4 @@
+import json
 import sys
 import typing as t
 from pathlib import Path
@@ -25,6 +26,7 @@ def main(
     address: str,
     path: Path,
     pattern: str,
+    export_file: t.Optional[Path] = None,
     llm_strategy: t.Optional[str] = None,
     llm_use_llama: bool = False,
     include_context: bool = False,
@@ -108,6 +110,44 @@ def main(
     print("Final metrics:")
     print_metrics(predicted_labels, true_labels)
 
+    if export_file is not None:
+        export_metrics(predicted_labels, true_labels, export_file)
+
+
+def export_metrics(
+    predicted_labels: list[entailment_pb2.EntailmentType.ValueType],
+    true_labels: list[entailment_pb2.EntailmentType.ValueType],
+    path: Path,
+):
+    filtered_true_labels = [
+        label
+        for idx, label in enumerate(true_labels)
+        if predicted_labels[idx]
+        != entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
+    ]
+
+    filtered_predicted_labels = [
+        label
+        for idx, label in enumerate(predicted_labels)
+        if predicted_labels[idx]
+        != entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
+    ]
+
+    with path.with_suffix(".json").open("w") as f:
+        json.dump(
+            {
+                "raw": {
+                    "predicted": predicted_labels,
+                    "true": true_labels,
+                },
+                "filtered": {
+                    "predicted": filtered_predicted_labels,
+                    "true": filtered_true_labels,
+                },
+            },
+            f,
+        )
+
 
 def print_metrics(
     predicted_labels: list[entailment_pb2.EntailmentType.ValueType],
@@ -143,14 +183,24 @@ def print_metrics(
     typer.echo(
         f"Accuracy: {metrics.accuracy_score(filtered_true_labels, filtered_predicted_labels)}"
     )
-    typer.echo(
-        "Recall:"
-        f" {metrics.recall_score(filtered_true_labels, filtered_predicted_labels, average=None, labels=labels)}"
-    )
-    typer.echo(
-        "Precision:"
-        f" {metrics.precision_score(filtered_true_labels, filtered_predicted_labels, average=None, labels=labels)}"
-    )
+    if len(labels) == 2:
+        typer.echo(
+            "Recall:"
+            f" {metrics.recall_score(filtered_true_labels, filtered_predicted_labels)}"
+        )
+        typer.echo(
+            "Precision:"
+            f" {metrics.precision_score(filtered_true_labels, filtered_predicted_labels)}"
+        )
+    else:
+        typer.echo(
+            "Recall:"
+            f" {metrics.recall_score(filtered_true_labels, filtered_predicted_labels, average=None, labels=labels)}"
+        )
+        typer.echo(
+            "Precision:"
+            f" {metrics.precision_score(filtered_true_labels, filtered_predicted_labels, average=None, labels=labels)}"
+        )
 
 
 if __name__ == "__main__":
