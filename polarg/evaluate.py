@@ -1,4 +1,3 @@
-import json
 import sys
 import typing as t
 from pathlib import Path
@@ -8,8 +7,8 @@ import grpc
 import typer
 from arg_services.mining.v1beta import entailment_pb2, entailment_pb2_grpc
 from google.protobuf.struct_pb2 import Struct
-from sklearn import metrics
 
+from polarg import metrics
 from polarg.model import llm
 from polarg.model.annotation import (
     EntailmentLabel,
@@ -104,103 +103,15 @@ def main(
         predicted_labels.extend(entailment.type for entailment in res.entailments)
 
         if metrics_per_case:
-            print_metrics(predicted_labels, true_labels)
+            metrics.show(metrics.serialize(predicted_labels, true_labels))
             print()
 
     print("Final metrics:")
-    print_metrics(predicted_labels, true_labels)
+    serialized_labels = metrics.serialize(predicted_labels, true_labels)
+    metrics.show(serialized_labels)
 
     if export_file is not None:
-        export_metrics(predicted_labels, true_labels, export_file)
-
-
-def export_metrics(
-    predicted_labels: list[entailment_pb2.EntailmentType.ValueType],
-    true_labels: list[entailment_pb2.EntailmentType.ValueType],
-    path: Path,
-):
-    filtered_true_labels = [
-        label
-        for idx, label in enumerate(true_labels)
-        if predicted_labels[idx]
-        != entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
-    ]
-
-    filtered_predicted_labels = [
-        label
-        for idx, label in enumerate(predicted_labels)
-        if predicted_labels[idx]
-        != entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
-    ]
-
-    with path.with_suffix(".json").open("w") as f:
-        json.dump(
-            {
-                "raw": {
-                    "predicted": predicted_labels,
-                    "true": true_labels,
-                },
-                "filtered": {
-                    "predicted": filtered_predicted_labels,
-                    "true": filtered_true_labels,
-                },
-            },
-            f,
-        )
-
-
-def print_metrics(
-    predicted_labels: list[entailment_pb2.EntailmentType.ValueType],
-    true_labels: list[entailment_pb2.EntailmentType.ValueType],
-):
-    len_all_labels = len(true_labels)
-
-    filtered_true_labels = [
-        label
-        for idx, label in enumerate(true_labels)
-        if predicted_labels[idx]
-        != entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
-    ]
-
-    filtered_predicted_labels = [
-        label
-        for idx, label in enumerate(predicted_labels)
-        if predicted_labels[idx]
-        != entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
-    ]
-
-    len_known_labels = len(filtered_true_labels)
-    len_unknown_labels = len_all_labels - len_known_labels
-
-    labels = sorted(set(filtered_predicted_labels).union(filtered_true_labels))
-
-    typer.echo(
-        f"Labels: {[entailment_pb2.EntailmentType.Name(label) for label in labels]}"
-    )
-    typer.echo(
-        f"Unknown labels: {len_unknown_labels} ({len_unknown_labels / len_all_labels:.2%})"
-    )
-    typer.echo(
-        f"Accuracy: {metrics.accuracy_score(filtered_true_labels, filtered_predicted_labels)}"
-    )
-    if len(labels) == 2:
-        typer.echo(
-            "Recall:"
-            f" {metrics.recall_score(filtered_true_labels, filtered_predicted_labels)}"
-        )
-        typer.echo(
-            "Precision:"
-            f" {metrics.precision_score(filtered_true_labels, filtered_predicted_labels)}"
-        )
-    else:
-        typer.echo(
-            "Recall:"
-            f" {metrics.recall_score(filtered_true_labels, filtered_predicted_labels, average=None, labels=labels)}"
-        )
-        typer.echo(
-            "Precision:"
-            f" {metrics.precision_score(filtered_true_labels, filtered_predicted_labels, average=None, labels=labels)}"
-        )
+        metrics.dump(serialized_labels, export_file)
 
 
 if __name__ == "__main__":
