@@ -104,12 +104,12 @@ def show(
             "labels": label_types,
         }
 
-    recall = metrics.recall_score(
+    precision = metrics.precision_score(
         labels["filtered"]["true"],
         labels["filtered"]["predicted"],
         **precision_recall_args,
     )
-    precision = metrics.precision_score(
+    recall = metrics.recall_score(
         labels["filtered"]["true"],
         labels["filtered"]["predicted"],
         **precision_recall_args,
@@ -118,8 +118,8 @@ def show(
     typer.echo(f"Labels: {found_labels}")
     typer.echo(f"Unknown labels: {len_unknown_labels} ({percent_unknown_labels:.2%})")
     typer.echo(f"Accuracy: {accuracy:.3f}")
-    typer.echo(f"Recall: {recall:.3f}")
     typer.echo(f"Precision: {precision:.3f}")
+    typer.echo(f"Recall: {recall:.3f}")
 
 
 if __name__ == "__main__":
