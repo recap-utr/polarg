@@ -70,6 +70,9 @@ class EntailmentService(entailment_pb2_grpc.EntailmentServiceServicer):
                     )
                 )
 
+            if len(annotations) == 0:
+                return res
+
             try:
                 llm_options = t.cast(llm.Options | None, req.extras["llm_options"])
             except ValueError:
