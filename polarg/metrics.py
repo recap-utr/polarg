@@ -98,7 +98,7 @@ def show(
 
     precision_recall_args = {}
 
-    if len(labels) != 2:
+    if len(label_types) != 2:
         precision_recall_args = {
             "average": None,
             "labels": label_types,
@@ -118,8 +118,13 @@ def show(
     typer.echo(f"Labels: {found_labels}")
     typer.echo(f"Unknown labels: {len_unknown_labels} ({percent_unknown_labels:.2%})")
     typer.echo(f"Accuracy: {accuracy:.3f}")
-    typer.echo(f"Precision: {precision:.3f}")
-    typer.echo(f"Recall: {recall:.3f}")
+
+    if len(label_types) != 2:
+        typer.echo(f"Precision: {precision}")
+        typer.echo(f"Recall: {recall}")
+    else:
+        typer.echo(f"Precision: {precision:.3f}")
+        typer.echo(f"Recall: {recall:.3f}")
 
 
 if __name__ == "__main__":
