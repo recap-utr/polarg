@@ -246,3 +246,4 @@ data/*
 /.direnv/
 /lightning_logs/
 /wandb/
+/output/

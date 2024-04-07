@@ -24,6 +24,7 @@ immutables = "^0.20"
 scipy = "^1.11"
 numpy = "^1.26"
 httpx = { extras = ["http2"], version = "^0.25" }
+statsmodels = "^0.14.1"
 
 [build-system]
 requires = ["poetry-core"]

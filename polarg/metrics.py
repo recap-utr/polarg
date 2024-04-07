@@ -2,6 +2,7 @@ import json
 import typing as t
 from pathlib import Path
 
+from statsmodels.stats.contingency_tables import mcnemar
 import typer
 from arg_services.mining.v1beta import entailment_pb2
 from sklearn import metrics
@@ -14,7 +15,57 @@ def main(
     path: Path,
 ):
     labels = load(path)
-    show(labels)
+    compute(labels, show=True)
+
+
+@app.command()
+def significance(
+    path: Path,
+    pattern1: t.Annotated[list[str], typer.Option(default_factory=list)],
+    pattern2: t.Annotated[list[str], typer.Option(default_factory=list)],
+):
+    pattern1_labels: list[LabelsEntry] = []
+    pattern2_labels: list[LabelsEntry] = []
+
+    for pattern in pattern1:
+        for file in sorted(path.glob(pattern)):
+            pattern1_labels.append(load(file)["raw"])
+
+    for pattern in pattern2:
+        for file in sorted(path.glob(pattern)):
+            pattern2_labels.append(load(file)["raw"])
+
+    assert len(pattern1_labels) == len(pattern2_labels)
+    y1 = []
+    y2 = []
+    y_unknown = 0
+
+    for labels1, labels2 in zip(pattern1_labels, pattern2_labels):
+        assert labels1["true"] == labels2["true"]
+        true_labels = labels1["true"]
+
+        for idx, (predicted1, predicted2) in enumerate(
+            zip(labels1["predicted"], labels2["predicted"])
+        ):
+            if (
+                predicted1 == entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
+                or predicted2
+                == entailment_pb2.EntailmentType.ENTAILMENT_TYPE_UNSPECIFIED
+            ):
+                y_unknown += 1
+                continue
+
+            true_label = true_labels[idx]
+            y1.append(predicted1 == true_label)
+            y2.append(predicted2 == true_label)
+
+    contigency_table = metrics.confusion_matrix(y1, y2)
+    mcnemar_result = mcnemar(contigency_table, exact=False, correction=True)
+
+    print("Known labels:", len(y1))
+    print("Unknown labels:", y_unknown)
+    print(contigency_table)
+    print(mcnemar_result)
 
 
 LabelList = list[entailment_pb2.EntailmentType.ValueType]
@@ -62,16 +113,6 @@ def serialize(
     return serialized_labels
 
 
-def dump(
-    labels: Labels,
-    path: Path,
-):
-    with path.with_suffix(".json").open("w") as f:
-        json.dump(labels, f)
-
-    return labels
-
-
 def load(path: Path) -> Labels:
     with path.with_suffix(".json").open("r") as f:
         data = json.load(f)
@@ -79,8 +120,9 @@ def load(path: Path) -> Labels:
     return data
 
 
-def show(
+def compute(
     labels: Labels,
+    show: bool = True,
 ):
     len_all_labels = len(labels["raw"]["true"])
     len_known_labels = len(labels["filtered"]["true"])
@@ -115,16 +157,35 @@ def show(
         **precision_recall_args,
     )
 
-    typer.echo(f"Labels: {found_labels}")
-    typer.echo(f"Unknown labels: {len_unknown_labels} ({percent_unknown_labels:.2%})")
-    typer.echo(f"Accuracy: {accuracy:.3f}")
+    final_metrics = {
+        "labels": found_labels,
+        "unknown_labels": len_unknown_labels,
+        "accuracy": accuracy,
+    }
 
-    if len(label_types) != 2:
-        typer.echo(f"Precision: {precision}")
-        typer.echo(f"Recall: {recall}")
-    else:
-        typer.echo(f"Precision: {precision:.3f}")
-        typer.echo(f"Recall: {recall:.3f}")
+    if len(label_types) == 2:
+        final_metrics.update(
+            {
+                "precision": precision,
+                "recall": recall,
+            }
+        )
+
+    if show:
+        typer.echo(f"Labels: {found_labels}")
+        typer.echo(
+            f"Unknown labels: {len_unknown_labels} ({percent_unknown_labels:.2%})"
+        )
+        typer.echo(f"Accuracy: {accuracy:.3f}")
+
+        if len(label_types) != 2:
+            typer.echo(f"Precision: {precision}")
+            typer.echo(f"Recall: {recall}")
+        else:
+            typer.echo(f"Precision: {precision:.3f}")
+            typer.echo(f"Recall: {recall:.3f}")
+
+    return final_metrics
 
 
 if __name__ == "__main__":
