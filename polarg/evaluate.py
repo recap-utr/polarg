@@ -27,7 +27,7 @@ def main(
     address: str,
     path: Path,
     pattern: str,
-    export_metrics: t.Optional[Path] = None,
+    export_labels: t.Optional[Path] = None,
     export_predictions: t.Optional[Path] = None,
     llm_strategy: t.Optional[str] = None,
     llm_use_llama: bool = False,
@@ -166,8 +166,8 @@ def main(
     serialized_labels = metrics.serialize(predicted_labels, true_labels)
     metrics.compute(serialized_labels)
 
-    if export_metrics is not None:
-        with path.with_suffix(".json").open("w") as f:
+    if export_labels is not None:
+        with export_labels.with_suffix(".json").open("w") as f:
             json.dump(serialized_labels, f)
 
 
