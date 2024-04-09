@@ -2,10 +2,10 @@ import json
 import typing as t
 from pathlib import Path
 
-from statsmodels.stats.contingency_tables import mcnemar
 import typer
 from arg_services.mining.v1beta import entailment_pb2
 from sklearn import metrics
+from statsmodels.stats.contingency_tables import mcnemar
 
 app = typer.Typer()
 
@@ -133,7 +133,9 @@ def compute(
     )
 
     found_labels = [entailment_pb2.EntailmentType.Name(label) for label in label_types]
-    percent_unknown_labels = len_unknown_labels / len_all_labels
+    percent_unknown_labels = (
+        len_unknown_labels / len_all_labels if len_all_labels else 0
+    )
     accuracy = metrics.accuracy_score(
         labels["filtered"]["true"], labels["filtered"]["predicted"]
     )
