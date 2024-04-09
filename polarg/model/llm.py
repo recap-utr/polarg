@@ -138,38 +138,10 @@ class Llm:
     async def generate(
         self, user_prompt: str, system_prompt: str, context: list[Any] | None = None
     ) -> tuple[str, list[Any]]:
-        # if self.options["use_llama"]:
-        #     res = await self.fetch_llama(user_prompt, system_prompt, context)
-
-        #     return res
-
-        # else:
         res = await self.fetch_openai(user_prompt, system_prompt, context)
         assert res[0].content is not None
 
         return res[0].content, res[1]
-
-    async def fetch_llama(
-        self,
-        user_prompt: str,
-        system_prompt: str,
-        context: list[int] | None = None,
-        json: bool = False,
-    ) -> tuple[str, list[int]]:
-        raw_res = await self.llama_client.post(
-            "generate",
-            json={
-                "model": "llama2:13b",
-                "prompt": user_prompt,
-                "system_prompt": system_prompt,
-                "format": "json" if json else None,
-                "context": context,
-                "stream": False,
-            },
-        )
-        res = raw_res.json()
-
-        return res["response"], res["context"]
 
     async def fetch_openai(
         self,
@@ -192,7 +164,7 @@ class Llm:
         }
 
         response = await self.openai_client.chat.completions.create(
-            model="ollama/llama2:13b"
+            model="llama2:13b"
             if self.options["use_llama"]
             else openai_models[self.options["strategy"]],
             messages=[system_message, *context, user_message],

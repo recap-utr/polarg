@@ -1,4 +1,4 @@
-openai_proxy_address = "TODO"
+openai_proxy_address = "http://127.0.0.1:6060/v1"
 
 [model]
 path = "data/model.pt"
