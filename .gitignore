@@ -248,3 +248,4 @@ data/*
 /wandb/
 /output/
 /tmp/
+/results*/
